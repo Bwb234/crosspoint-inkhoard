@@ -160,6 +160,15 @@ std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& w
   trimSurroundingPunctuationAndFootnote(cps);
   const auto* hyphenator = cachedHyphenator_;
 
+  // Detect apostrophe-like separators early; used by both branches below.
+  bool hasApostropheLikeSeparator = false;
+  for (const auto& cp : cps) {
+    if (isApostrophe(cp.value)) {
+      hasApostropheLikeSeparator = true;
+      break;
+    }
+  }
+
   // Explicit hyphen markers (soft or hard) take precedence over language breaks.
   auto explicitBreakInfos = buildExplicitBreakInfos(cps);
   if (!explicitBreakInfos.empty()) {
@@ -179,26 +188,26 @@ std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& w
     //   Result: 6 sorted break points; the line-breaker picks the widest prefix that fits.
     if (hyphenator) {
       appendSegmentPatternBreaks(cps, *hyphenator, /*includeFallback=*/false, explicitBreakInfos);
-      // Merge explicit and pattern breaks into ascending byte-offset order.
-      sortAndDedupeBreakInfos(explicitBreakInfos);
     }
+    // Also add apostrophe contraction breaks when present (e.g. "l'état-major"
+    // has both an explicit hyphen and an apostrophe that can independently break).
+    if (hasApostropheLikeSeparator) {
+      appendApostropheContractionBreaks(cps, explicitBreakInfos);
+    }
+    // Merge all break points into ascending byte-offset order.
+    sortAndDedupeBreakInfos(explicitBreakInfos);
     return explicitBreakInfos;
   }
 
   // Apostrophe-like separators split compounds into alphabetic segments; run Liang on each segment.
   // This allows words like "all'improvviso" to hyphenate within "improvviso" instead of becoming
-  // completely unsplittable due to the apostrophe punctuation.
-  bool hasApostropheLikeSeparator = false;
-  for (const auto& cp : cps) {
-    if (isApostrophe(cp.value)) {
-      hasApostropheLikeSeparator = true;
-      break;
-    }
-  }
-
-  if (hyphenator && hasApostropheLikeSeparator) {
+  // completely unsplittable due to the apostrophe punctuation. Apostrophe contraction breaks are
+  // applied regardless of whether a language hyphenator is available.
+  if (hasApostropheLikeSeparator) {
     std::vector<BreakInfo> segmentedBreaks;
-    appendSegmentPatternBreaks(cps, *hyphenator, includeFallback, segmentedBreaks);
+    if (hyphenator) {
+      appendSegmentPatternBreaks(cps, *hyphenator, includeFallback, segmentedBreaks);
+    }
     appendApostropheContractionBreaks(cps, segmentedBreaks);
     sortAndDedupeBreakInfos(segmentedBreaks);
     return segmentedBreaks;
