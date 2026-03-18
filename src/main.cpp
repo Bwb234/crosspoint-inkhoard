@@ -347,11 +347,6 @@ void loop() {
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
 
-  // Refresh the battery icon immediately when USB is plugged or unplugged
-  if (gpio.wasUsbStateChanged()) {
-    activityManager.requestUpdate();
-  }
-
   static bool screenshotButtonsReleased = true;
   if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.isPressed(HalGPIO::BTN_DOWN)) {
     if (screenshotButtonsReleased) {
@@ -382,6 +377,12 @@ void loop() {
     enterDeepSleep();
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
     return;
+  }
+
+  // Refresh the battery icon when USB is plugged or unplugged.
+  // Placed after sleep guards so we never queue a render that won't be processed.
+  if (gpio.wasUsbStateChanged()) {
+    activityManager.requestUpdate();
   }
 
   const unsigned long activityStartTime = millis();
