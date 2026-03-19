@@ -1,6 +1,7 @@
 #include "ChapterXPathIndexer.h"
 
 #include <Logging.h>
+#include <Print.h>
 #include <expat.h>
 
 #include <algorithm>
@@ -387,18 +388,10 @@ static std::optional<ParserState> parseSpineItem(const std::shared_ptr<Epub>& ep
     return std::nullopt;
   }
 
-  size_t chapterSize = 0;
-  uint8_t* chapterBytes = epub->readItemContentsToBytes(spineItem.href, &chapterSize, false);
-  if (!chapterBytes || chapterSize == 0) {
-    free(chapterBytes);
-    return std::nullopt;
-  }
-
   ParserState state(spineIndex);
 
   XML_Parser parser = XML_ParserCreate(nullptr);
   if (!parser) {
-    free(chapterBytes);
     LOG_ERR("KOX", "Failed to allocate XML parser for spine=%d", spineIndex);
     return std::nullopt;
   }
@@ -408,8 +401,30 @@ static std::optional<ParserState> parseSpineItem(const std::shared_ptr<Epub>& ep
   XML_SetCharacterDataHandler(parser, onCharacterData);
   XML_SetDefaultHandlerExpand(parser, onDefaultHandlerExpand);
 
-  const bool parseOk = XML_Parse(parser, reinterpret_cast<const char*>(chapterBytes), static_cast<int>(chapterSize),
-                                 XML_TRUE) != XML_STATUS_ERROR;
+  // Feed decompressed data to Expat incrementally to avoid a large contiguous allocation.
+  class ExpatPrint : public Print {
+   public:
+    XML_Parser parser;
+    bool ok = true;
+    size_t write(uint8_t b) override { return write(&b, 1); }
+    size_t write(const uint8_t* buf, size_t size) override {
+      if (!ok) return 0;
+      if (XML_Parse(parser, reinterpret_cast<const char*>(buf), static_cast<int>(size), XML_FALSE) ==
+          XML_STATUS_ERROR) {
+        ok = false;
+        return 0;
+      }
+      return size;
+    }
+  };
+
+  ExpatPrint ep;
+  ep.parser = parser;
+  constexpr size_t kChunkSize = 512;
+  epub->readItemContentsToStream(spineItem.href, ep, kChunkSize);
+
+  // Finalise the parse regardless of streaming result
+  const bool parseOk = ep.ok && XML_Parse(parser, "", 0, XML_TRUE) != XML_STATUS_ERROR;
 
   if (!parseOk) {
     LOG_ERR("KOX", "XPath parse failed for spine=%d at line %lu: %s", spineIndex, XML_GetCurrentLineNumber(parser),
@@ -417,7 +432,6 @@ static std::optional<ParserState> parseSpineItem(const std::shared_ptr<Epub>& ep
   }
 
   XML_ParserFree(parser);
-  free(chapterBytes);
 
   if (!parseOk) {
     return std::nullopt;
