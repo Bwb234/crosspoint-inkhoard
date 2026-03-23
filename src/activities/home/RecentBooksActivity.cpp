@@ -58,8 +58,7 @@ void RecentBooksActivity::loop() {
 
   // Left button: remove selected book from recent list
   if (!recentBooks.empty() && selectorIndex < recentBooks.size() &&
-      (mappedInput.wasReleased(MappedInputManager::Button::Left) ||
-       mappedInput.wasReleased(MappedInputManager::Button::Up))) {
+      mappedInput.wasReleased(MappedInputManager::Button::Left)) {
     const std::string bookPath = recentBooks[selectorIndex].path;
     const std::string bookTitle = recentBooks[selectorIndex].title;
 
