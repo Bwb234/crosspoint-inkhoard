@@ -37,8 +37,8 @@ const int verticalPreviewTextPadding = 40;
 void StatusBarSettingsActivity::onEnter() {
   Activity::onEnter();
 
-  selectedIndex = 0;
-  if (!SETTINGS.useClock && selectedIndex >= MENU_ITEMS - 1) {
+  const int menuCount = SETTINGS.useClock ? MENU_ITEMS : MENU_ITEMS - 1;
+  if (selectedIndex >= menuCount) {
     selectedIndex = 0;
   }
 

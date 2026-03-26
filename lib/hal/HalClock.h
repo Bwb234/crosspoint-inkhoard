@@ -19,7 +19,7 @@
 /// Usage:
 ///  1. On boot, call `restore()` to seed the system clock from the best
 ///     available source (RTC memory + LP correction > NVS).
-///  2. After a successful NTP sync, call `onNtpSynced()`.
+///  2. After a successful NTP sync, call `syncNtp()`.
 ///  3. Before entering deep sleep, call `saveBeforeSleep()`.
 ///
 /// `now()` returns the best-effort epoch (0 if never synced).

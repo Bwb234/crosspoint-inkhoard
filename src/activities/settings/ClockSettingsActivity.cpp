@@ -52,6 +52,16 @@ void ClockSettingsActivity::loop() {
     selectedIndex = ButtonNavigator::previousIndex(selectedIndex, MENU_ITEMS);
     requestUpdate();
   });
+
+  buttonNavigator.onNextContinuous([this] {
+    selectedIndex = ButtonNavigator::nextIndex(selectedIndex, MENU_ITEMS);
+    requestUpdate();
+  });
+
+  buttonNavigator.onPreviousContinuous([this] {
+    selectedIndex = ButtonNavigator::previousIndex(selectedIndex, MENU_ITEMS);
+    requestUpdate();
+  });
 }
 
 void ClockSettingsActivity::handleSelection() {

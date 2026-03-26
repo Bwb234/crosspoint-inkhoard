@@ -220,14 +220,6 @@ void SettingsActivity::toggleCurrentSetting() {
     return;
   }
 
-  if (setting.nameId == StrId::STR_TIMEZONE) {
-    HalClock::applyTimezone(SETTINGS.timeZone);
-  }
-
-  if (setting.nameId == StrId::STR_USE_CLOCK && !SETTINGS.useClock) {
-    SETTINGS.statusBarClock = 0;
-  }
-
   SETTINGS.saveToFile();
 }
 

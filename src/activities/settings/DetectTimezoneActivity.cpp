@@ -33,12 +33,12 @@ bool mapIanaTimezone(const std::string& tz, uint8_t& outSetting) {
     outSetting = TZ::TZ_EET;
     return true;
   }
-  if (tz.rfind("Europe/", 0) == 0) {
-    outSetting = TZ::TZ_CET;
-    return true;
-  }
   if (tz == "Europe/Moscow") {
     outSetting = TZ::TZ_MSK;
+    return true;
+  }
+  if (tz.rfind("Europe/", 0) == 0) {
+    outSetting = TZ::TZ_CET;
     return true;
   }
   if (tz == "America/New_York" || tz == "America/Toronto") {
@@ -136,7 +136,7 @@ bool detectTimezoneSetting(uint8_t& outSetting, std::string& outIana, bool& outD
     }
   }
 
-  if (payload.empty() && !fetchTimezonePayload("http://ip-api.com/json/?fields=timezone,dst", payload)) {
+  if (payload.empty() && !fetchTimezonePayload("https://ip-api.com/json/?fields=timezone,dst", payload)) {
     LOG_ERR("CLK", "Timezone detect failed: fetch error");
     return false;
   }
@@ -265,6 +265,12 @@ void DetectTimezoneActivity::render(RenderLock&&) {
 
   renderer.clearScreen();
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_DETECT_TIMEZONE));
+
+  if (state == CONNECTING) {
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, tr(STR_CONNECTING), true, EpdFontFamily::BOLD);
+    renderer.displayBuffer();
+    return;
+  }
 
   if (state == DETECTING) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, tr(STR_DETECTING_TIMEZONE), true, EpdFontFamily::BOLD);
