@@ -316,9 +316,23 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
     const int availableWidth = pageWidth - 20;
 
     int textBlockHeight = 0;
-    if (hasTitle) textBlockHeight += lineHeight12;
-    if (hasAuthor) textBlockHeight += lineSpacing + lineHeight10;
-    if (hasProgress) textBlockHeight += sectionSpacing + lineHeight10;
+    if (hasTitle) {
+      textBlockHeight += lineHeight12;
+      if (hasAuthor) {
+        textBlockHeight += lineSpacing;
+      } else if (hasProgress) {
+        textBlockHeight += sectionSpacing;
+      }
+    }
+    if (hasAuthor) {
+      textBlockHeight += lineHeight10;
+      if (hasProgress) {
+        textBlockHeight += sectionSpacing;
+      }
+    }
+    if (hasProgress) {
+      textBlockHeight += lineHeight10;
+    }
 
     const bool textBlack = (overlayMode != 2);
     const int topPadding = lineHeight12 / 3;
@@ -338,7 +352,8 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
       const std::string titleStr =
           renderer.truncatedText(BOOKERLY_12_FONT_ID, overlayInfo.title.c_str(), availableWidth, EpdFontFamily::BOLD);
       renderer.drawCenteredText(BOOKERLY_12_FONT_ID, currentY, titleStr.c_str(), textBlack, EpdFontFamily::BOLD);
-      currentY += lineHeight12 + lineSpacing;
+      const int spacingAfterTitle = hasAuthor ? lineSpacing : (hasProgress ? sectionSpacing : lineSpacing);
+      currentY += lineHeight12 + spacingAfterTitle;
     }
 
     if (hasAuthor) {
