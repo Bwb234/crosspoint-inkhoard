@@ -10,12 +10,16 @@ class GfxRenderer;
 struct RecentBook;
 
 struct Rect {
-  int x;
-  int y;
-  int width;
-  int height;
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
 
-  explicit Rect(int x = 0, int y = 0, int width = 0, int height = 0) : x(x), y(y), width(width), height(height) {}
+  // Non-explicit zero-init default ctor so value-initialization (e.g. arrays of
+  // structs embedding a Rect) does not route through an explicit constructor.
+  // The parameterized ctor stays explicit to block implicit int->Rect.
+  Rect() = default;
+  explicit Rect(int x, int y = 0, int width = 0, int height = 0) : x(x), y(y), width(width), height(height) {}
 
   // Logical-coordinate point hit-test (used for touch target hit-testing).
   bool contains(int px, int py) const { return px >= x && px < x + width && py >= y && py < y + height; }
