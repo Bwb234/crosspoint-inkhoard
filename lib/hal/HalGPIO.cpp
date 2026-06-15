@@ -192,11 +192,13 @@ HalGPIO::DeviceType detectDeviceTypeWithFingerprint() {
 
 void HalGPIO::begin() {
   inputMgr.begin();
-#if !(defined(FREEINK_DEVICE_M5PAPER) && FREEINK_DEVICE_M5PAPER)
-  // Claim the shared SPI bus with the X4/X3 display+SD pins. On M5Paper the SDK's
-  // IT8951 driver and SDCardManager each bring up SPI from BoardConfig::ACTIVE
-  // pins; pre-claiming VSPI here would stick (SPIClass::begin early-returns if the
-  // bus is already started) and leave the SD card on the wrong pins.
+#if FREEINK_MCU_C3
+  // Claim the shared SPI bus with the X4/X3 display+SD pins. These EPD_* pin
+  // macros are hardcoded C3/Xteink values, so this pre-claim is only valid on the
+  // C3 family. On other boards (M5Paper's IT8951, Sticky's SSD1677, ...) the SDK
+  // driver and SDCardManager bring up SPI from BoardConfig::ACTIVE pins; pre-
+  // claiming here would stick (SPIClass::begin early-returns once the bus is
+  // started) and leave the display/SD on the wrong pins.
   SPI.begin(EPD_SCLK, SPI_MISO, EPD_MOSI, EPD_CS);
 #endif
 
