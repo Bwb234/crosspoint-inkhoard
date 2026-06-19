@@ -123,6 +123,27 @@ void StatusBarSettingsActivity::loop() {
     return;
   }
 
+  const int pageItems = UITheme::getInstance().getNumberOfItemsPerPage(renderer, true, false, true, false);
+  const bool swiped = mappedInput.wasListScroll(selectedIndex, visibleItemCount, pageItems);
+  if (swiped) {
+    requestUpdate();
+    return;
+  }
+
+  int downId = -1;
+  if (mappedInput.wasItemTouchedDown(downId) && downId >= 0 && downId < visibleItemCount) {
+    selectedIndex = downId;
+    requestUpdate();
+  }
+
+  int tappedId = -1;
+  if (mappedInput.wasItemTapped(tappedId) && tappedId >= 0 && tappedId < visibleItemCount) {
+    selectedIndex = tappedId;
+    handleSelection();
+    requestUpdate();
+    return;
+  }
+
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
     handleSelection();
     requestUpdate();

@@ -9,6 +9,7 @@
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "components/TouchRegistry.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -108,14 +109,57 @@ void ClockOffsetActivity::adjustActiveField(int delta) {
   }
 }
 
+void ClockOffsetActivity::selectRelativeField(const int delta) {
+  activeField = static_cast<Field>((activeField + delta + FIELD_COUNT) % FIELD_COUNT);
+}
+
 void ClockOffsetActivity::loop() {
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     finish();
     return;
   }
 
+  switch (mappedInput.wasSwipe()) {
+    case MappedInputManager::SwipeDir::Up:
+      adjustActiveField(+1);
+      requestUpdate();
+      return;
+    case MappedInputManager::SwipeDir::Down:
+      adjustActiveField(-1);
+      requestUpdate();
+      return;
+    case MappedInputManager::SwipeDir::Left:
+      selectRelativeField(+1);
+      requestUpdate();
+      return;
+    case MappedInputManager::SwipeDir::Right:
+      selectRelativeField(-1);
+      requestUpdate();
+      return;
+    case MappedInputManager::SwipeDir::None:
+      break;
+  }
+
+  int downId = -1;
+  if (mappedInput.wasItemTouchedDown(downId) && downId >= 0 && downId < FIELD_COUNT) {
+    activeField = static_cast<Field>(downId);
+    requestUpdate();
+  }
+
+  int tappedId = -1;
+  if (mappedInput.wasItemTapped(tappedId) && tappedId >= 0 && tappedId < FIELD_COUNT) {
+    const Field tappedField = static_cast<Field>(tappedId);
+    if (activeField == tappedField) {
+      adjustActiveField(+1);
+    } else {
+      activeField = tappedField;
+    }
+    requestUpdate();
+    return;
+  }
+
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    activeField = static_cast<Field>((activeField + 1) % FIELD_COUNT);
+    selectRelativeField(+1);
     requestUpdate();
     return;
   }
@@ -183,6 +227,8 @@ void ClockOffsetActivity::render(RenderLock&&) {
     }
     const int textX = boxX + (boxWidth - widthOf(text)) / 2;
     renderer.drawText(UI_12_FONT_ID, textX, centreY, text, true, EpdFontFamily::BOLD);
+    TouchRegistry::getInstance().add(Rect{boxX - 4, centreY - 8, boxWidth + 8, fieldHeight + 16},
+                                     static_cast<int>(field), TouchRegistry::Item);
   };
 
   drawField(signStr, x, signBoxW, FIELD_SIGN);
