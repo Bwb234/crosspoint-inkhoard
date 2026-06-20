@@ -300,13 +300,6 @@ void HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPre
     // Fast path - no duration check needed
     return;
   }
-  // TODO: Intermittent edge case remains: a single tap followed by another single tap
-  // can still power on the device. Tighten wake debounce/state handling here.
-
-  // Calibrate: subtract boot time already elapsed, assuming button held since boot
-  const uint16_t calibration = millis();
-  const uint16_t calibratedDuration = (calibration < requiredDurationMs) ? (requiredDurationMs - calibration) : 1;
-
   const auto start = millis();
   inputMgr.update();
   // inputMgr.isPressed() may take up to ~500ms to return correct state
@@ -315,11 +308,12 @@ void HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPre
     inputMgr.update();
   }
   if (inputMgr.isPressed(BTN_POWER)) {
+    const auto holdStart = millis();
     do {
       delay(10);
       inputMgr.update();
-    } while (inputMgr.isPressed(BTN_POWER) && inputMgr.getPowerButtonHeldTime() < calibratedDuration);
-    if (inputMgr.getPowerButtonHeldTime() < calibratedDuration) {
+    } while (inputMgr.isPressed(BTN_POWER) && millis() - holdStart < requiredDurationMs);
+    if (millis() - holdStart < requiredDurationMs) {
       startDeepSleep();
     }
   } else {

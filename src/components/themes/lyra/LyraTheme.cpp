@@ -101,6 +101,11 @@ void LyraTheme::fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t
     if (percentage > 70) {
       renderer.fillRect(rect.x + 10, rect.y + 2, 3, rect.height - 4);
     }
+    const int extraBarX = rect.x + 14;
+    const int cavityRight = rect.x + 2 + (rect.width - 5);
+    if (percentage >= 95 && extraBarX < cavityRight) {
+      renderer.fillRect(extraBarX, rect.y + 2, std::min(3, cavityRight - extraBarX), rect.height - 4);
+    }
   }
 }
 

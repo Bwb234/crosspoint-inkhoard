@@ -1,5 +1,6 @@
 #pragma once
 
+#include <BoardConfig.h>
 #include <HalClock.h>
 #include <HalGPIO.h>
 #include <HalTiltSensor.h>
@@ -267,6 +268,13 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
           break;
         }
       }
+    }
+    if (BoardConfig::hasTouch()) {
+      v.erase(std::remove_if(v.begin(), v.end(),
+                             [](const SettingInfo& s) {
+                               return s.nameId == StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION;
+                             }),
+              v.end());
     }
 
     // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
