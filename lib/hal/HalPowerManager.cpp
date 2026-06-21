@@ -1,6 +1,7 @@
 #include "HalPowerManager.h"
 
 #include <Logging.h>
+#include <PowerManager.h>
 #include <WiFi.h>
 #include <esp_sleep.h>
 
@@ -103,18 +104,9 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   esp_sleep_config_gpio_isolate();
   gpio_deep_sleep_hold_en();
   gpio_hold_en(GPIO_SPIWP);
-  pinMode(InputManager::POWER_BUTTON_PIN, INPUT_PULLUP);
-  // Arm the wakeup trigger *after* the button is released
-  // Note: this is only useful for waking up on USB power. On battery, the MCU will be completely powered off, so the
-  // power button is hard-wired to briefly provide power to the MCU, waking it up regardless of the wakeup source
-  // configuration
-  esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
-#else  // Xtensa (classic ESP32 / S3): RTC ext1 GPIO wake
-  pinMode(InputManager::POWER_BUTTON_PIN, INPUT_PULLUP);
-  esp_sleep_enable_ext1_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_EXT1_WAKEUP_ALL_LOW);
 #endif
-  // Enter Deep Sleep
-  esp_deep_sleep_start();
+  freeink::PowerManager::armPowerButtonWakeup();
+  freeink::PowerManager::deepSleep();
 }
 
 uint16_t HalPowerManager::getBatteryPercentage() const {

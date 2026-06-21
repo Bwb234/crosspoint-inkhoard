@@ -65,6 +65,13 @@ static constexpr float BACK_GESTURE_FRAC_X = 0.22f;
 static constexpr float BACK_GESTURE_FRAC_Y = 0.12f;
 static constexpr float BOTTOM_EDGE_BACK_GESTURE_FRAC_Y = 0.14f;
 static constexpr unsigned long TOUCH_DOWN_SELECT_DELAY_MS = 90;
+static constexpr unsigned long TOUCH_HELD_OVERRIDE_WINDOW_MS = 250;
+
+void MappedInputManager::rememberTouchHeldTime() const {
+  touchHeldOverrideValid = true;
+  touchHeldOverrideMs = gpio.lastTouchHeldMs();
+  touchHeldOverrideAt = millis();
+}
 
 bool MappedInputManager::wasBottomEdgeSwipeUp() const {
   float nxs = 0.0f, nys = 0.0f, nxe = 0.0f, nye = 0.0f;
@@ -76,7 +83,9 @@ bool MappedInputManager::wasBottomEdgeSwipeUp() const {
 
   const int screenHeight = renderer.getScreenHeight();
   const int bottomEdgeTop = screenHeight - static_cast<int>(screenHeight * BOTTOM_EDGE_BACK_GESTURE_FRAC_Y);
-  return sy >= bottomEdgeTop && ey < sy && std::abs(ey - sy) > std::abs(ex - sx);
+  const bool isBackSwipe = sy >= bottomEdgeTop && ey < sy && std::abs(ey - sy) > std::abs(ex - sx);
+  if (isBackSwipe) rememberTouchHeldTime();
+  return isBackSwipe;
 }
 
 bool MappedInputManager::wasBackGesture() const {
@@ -88,10 +97,15 @@ bool MappedInputManager::wasBackGesture() const {
   renderer.tapToLogical(nx, ny, lx, ly);
   // A tap on the theme's header Back target acts as Back.
   int id = 0;
-  if (TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Back, id)) return true;
+  if (TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Back, id)) {
+    rememberTouchHeldTime();
+    return true;
+  }
   // Else the top-left corner, for screens with no Back target (e.g. the reader).
-  return lx <= renderer.getScreenWidth() * BACK_GESTURE_FRAC_X &&
-         ly <= renderer.getScreenHeight() * BACK_GESTURE_FRAC_Y;
+  const bool isTopLeftBack = lx <= renderer.getScreenWidth() * BACK_GESTURE_FRAC_X &&
+                             ly <= renderer.getScreenHeight() * BACK_GESTURE_FRAC_Y;
+  if (isTopLeftBack) rememberTouchHeldTime();
+  return isTopLeftBack;
 }
 
 bool MappedInputManager::wasItemTapped(int& id) const {
@@ -99,7 +113,9 @@ bool MappedInputManager::wasItemTapped(int& id) const {
   if (!gpio.wasTouchTap(nx, ny)) return false;
   int lx = 0, ly = 0;
   renderer.tapToLogical(nx, ny, lx, ly);
-  return TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Item, id);
+  const bool hit = TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Item, id);
+  if (hit) rememberTouchHeldTime();
+  return hit;
 }
 
 bool MappedInputManager::wasItemTouchedDown(int& id) const {
@@ -143,7 +159,9 @@ bool MappedInputManager::wasItemLongPressed(int& id) const {
   if (gpio.lastTouchHeldMs() < TOUCH_LONG_PRESS_MS) return false;
   int lx = 0, ly = 0;
   renderer.tapToLogical(nx, ny, lx, ly);
-  return TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Item, id);
+  const bool hit = TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Item, id);
+  if (hit) rememberTouchHeldTime();
+  return hit;
 }
 
 bool MappedInputManager::wasTabTapped(int& id) const {
@@ -151,7 +169,9 @@ bool MappedInputManager::wasTabTapped(int& id) const {
   if (!gpio.wasTouchTap(nx, ny)) return false;
   int lx = 0, ly = 0;
   renderer.tapToLogical(nx, ny, lx, ly);
-  return TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Tab, id);
+  const bool hit = TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Tab, id);
+  if (hit) rememberTouchHeldTime();
+  return hit;
 }
 
 bool MappedInputManager::wasCoverTapped(int& id) const {
@@ -159,13 +179,16 @@ bool MappedInputManager::wasCoverTapped(int& id) const {
   if (!gpio.wasTouchTap(nx, ny)) return false;
   int lx = 0, ly = 0;
   renderer.tapToLogical(nx, ny, lx, ly);
-  return TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Cover, id);
+  const bool hit = TouchRegistry::getInstance().hitTest(lx, ly, TouchRegistry::Cover, id);
+  if (hit) rememberTouchHeldTime();
+  return hit;
 }
 
 bool MappedInputManager::wasScreenTapped(int& x, int& y) const {
   float nx = 0.0f, ny = 0.0f;
   if (!gpio.wasTouchTap(nx, ny)) return false;
   renderer.tapToLogical(nx, ny, x, y);
+  rememberTouchHeldTime();
   return true;
 }
 
@@ -220,7 +243,14 @@ bool MappedInputManager::wasAnyPressed() const { return gpio.wasAnyPressed(); }
 
 bool MappedInputManager::wasAnyReleased() const { return gpio.wasAnyReleased(); }
 
-unsigned long MappedInputManager::getHeldTime() const { return gpio.getHeldTime(); }
+unsigned long MappedInputManager::getHeldTime() const {
+  if (!gpio.wasAnyPressed() && !gpio.wasAnyReleased() && touchHeldOverrideValid &&
+      millis() - touchHeldOverrideAt <= TOUCH_HELD_OVERRIDE_WINDOW_MS) {
+    return touchHeldOverrideMs;
+  }
+  touchHeldOverrideValid = false;
+  return gpio.getHeldTime();
+}
 
 MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const char* confirm, const char* previous,
                                                          const char* next) const {

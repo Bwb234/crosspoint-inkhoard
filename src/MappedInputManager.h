@@ -61,9 +61,13 @@ class MappedInputManager {
   GfxRenderer& renderer;
 
   bool mapButton(Button button, bool (HalGPIO::*fn)(uint8_t) const) const;
+  void rememberTouchHeldTime() const;
   bool wasBottomEdgeSwipeUp() const;
 
   mutable bool touchSelectTracking = false;
   mutable bool touchSelectEmitted = false;
   mutable int touchSelectId = -1;
+  mutable bool touchHeldOverrideValid = false;
+  mutable unsigned long touchHeldOverrideMs = 0;
+  mutable unsigned long touchHeldOverrideAt = 0;
 };
