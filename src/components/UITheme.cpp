@@ -40,6 +40,9 @@ ThemeMetrics scaleThemeMetrics(const ThemeMetrics& b, float s) {
   m.batteryBarHeight = sp(b.batteryBarHeight, s);
   m.headerHeight = sp(b.headerHeight, s);
   m.verticalSpacing = sp(b.verticalSpacing, s);
+  // previewPadding is a pixel inset (font preview pane); scaled. previewHeightPercent is a
+  // percent of the usable height and is intentionally NOT scaled.
+  m.previewPadding = sp(b.previewPadding, s);
   m.contentSidePadding = sp(b.contentSidePadding, s);
   m.listRowHeight = sp(b.listRowHeight, s);
   m.listWithSubtitleRowHeight = sp(b.listWithSubtitleRowHeight, s);
