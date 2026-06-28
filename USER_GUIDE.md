@@ -122,19 +122,43 @@ A **Wi-Fi signal strength indicator** (dBm) is displayed on-screen during joined
 
 CrossPoint supports sending books from Calibre using the CrossPoint Reader device plugin.
 
-1. Install the plugin in Calibre:
-   
-   - Head to https://github.com/crosspoint-reader/calibre-plugins/releases to download the latest version of the crosspoint_reader plugin.
-   
-   - Download the zip file.
-   
-   - Open Calibre → Preferences → Plugins → Load plugin from file → Select the zip file.
+#### Installing the Plugin in Calibre
 
-2. On the device: File Transfer -> Calibre Wireless, then join a network.
+If you don't already have the plugin installed:
 
-3. Make sure your computer is on the same Wi-Fi network.
+1. Head to https://github.com/crosspoint-reader/calibre-plugins/releases to download the latest version of the crosspoint_reader plugin.
+2. Download the zip file.
+3. Open Calibre → Preferences → Plugins → Load plugin from file → Select the zip file.
+4. Restart Calibre.
 
-4. In Calibre, click "Send to device" to transfer books.
+#### Configuring the CrossPoint Plugin in Calibre
+1. In Calibre select Preferences.
+2. In the Preferences dialog select Plugins.
+3. In Plugins search for "crosspoint".
+4. Click on "Customize plugin".
+5. Update the value for "Host" to match the IP for your device.
+6. Leave the other settings as they are.
+7. [optional] Modify the "Upload path" to point to a subfolder other than the root "/" folder. Enter this as a path relative to the root folder. Example: `/mybooks`
+8. Restart Calibre.
+
+<img width="420" height="385" alt="Image" src="https://github.com/user-attachments/assets/01fc7e33-a9a7-48ba-9e26-2e68d1f9daec" />
+
+#### Uploading Books
+
+To upload a book using the CrossPoint plugin in Calibre:
+
+1. On the device: File Transfer -> Calibre Wireless, then join a network.
+2. Select one or more books.
+3. Right-click on that selection.
+4. Select "Send to Device" > "Send to main memory"
+
+The CrossPoint plugin will connect to your device, create a folder for the book's author in the root folder (or the folder you configured for the plugin), then copy the book into that folder.
+
+<img width="783" height="310" alt="Image" src="https://github.com/user-attachments/assets/741b0909-2e1d-4f16-8af0-2c43fbda5ce6" />
+
+#### Removing a Book
+
+Books cannot be removed from your device through Calibre. Use the web interface instead.
 
 ### 3.6 Settings
 
@@ -150,6 +174,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Cover" - The book cover image (Note: this is experimental and may not work as expected)
   - "None" - A blank screen
   - "Cover + Custom" - The book cover image while actively reading, falls back to "Custom" behavior otherwise
+  - "Quick resume" - The text of the last page read will be displayed on the sleep screen and a moon icon is shown on the edge of the screen. Waking up the device will return to the same page of the opened book. This is useful for quickly resuming reading without waiting for the device to fully wake up and load the book.
 
 - **Sleep Screen Cover Mode**: How to display the book cover when "Cover" sleep screen is selected:
   
@@ -161,6 +186,8 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "None" (default) - The cover image will be converted to a grayscale image and displayed as it is
   - "Contrast" - The image will be displayed as a black & white image without grayscale conversion
   - "Inverted" - The image will be inverted as in white & black and will be displayed without grayscale conversion
+
+- **Quick Resume on Timeout**: Whether to enable the "Quick Resume" sleep screen when the device goes to sleep due to inactivity (System > Time to Sleep). This is useful for quickly resuming reading without waiting for the device to fully wake up and load the book. This overwrites the Sleep Screen Cover Mode when enabled.
 
 - **Status Bar**: Configure the status bar displayed while reading:
   
@@ -526,6 +553,8 @@ On the **Xteink X3**, the gyroscope can be used to turn pages by tilting the dev
 ### Footnote Navigation
 
 When reading an EPUB that contains footnotes, you can navigate to the footnote text by selecting the footnote reference in the book. From the footnote, you can return to your original reading position.
+
+If the device goes to sleep or you close the book while viewing a footnote, the book reopens to your original reading position, not the footnote.
 
 ### System Navigation
 
