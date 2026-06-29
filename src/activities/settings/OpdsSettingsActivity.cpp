@@ -56,7 +56,7 @@ void OpdsSettingsActivity::loop() {
 
   int touched = -1;
   if (mappedInput.wasListItemTouchedDown(touched, menuItems, static_cast<int>(selectedIndex), contentTop,
-                                         contentHeight, true)) {
+                                         contentHeight, false)) {
     if (selectedIndex != static_cast<size_t>(touched)) {
       selectedIndex = static_cast<size_t>(touched);
       requestUpdate();
@@ -64,7 +64,7 @@ void OpdsSettingsActivity::loop() {
     return;
   }
   if (mappedInput.wasListItemTapped(touched, menuItems, static_cast<int>(selectedIndex), contentTop, contentHeight,
-                                    true)) {
+                                    false)) {
     selectedIndex = static_cast<size_t>(touched);
     handleSelection();
     return;

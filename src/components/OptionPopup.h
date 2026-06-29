@@ -76,6 +76,8 @@ class OptionPopup {
           return true;
         }
       }
+      active = false;
+      requestUpdate();
       return true;
     }
 

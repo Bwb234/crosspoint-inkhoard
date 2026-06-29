@@ -126,13 +126,13 @@ bool MappedInputManager::listItemFromPoint(const int x, const int y, int& index,
   if (itemCount <= 0) return false;
   if (y < listTop || y >= listTop + listHeight) return false;
 
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int rowHeight = hasSubtitle ? metrics.listWithSubtitleRowHeight : metrics.listRowHeight;
-  if (rowHeight <= 0) return false;
+  const auto& theme = UITheme::getInstance().getTheme();
+  const int rowStep = theme.getListRowStep(hasSubtitle);
+  if (rowStep <= 0) return false;
 
-  const int pageItems = std::max(1, listHeight / rowHeight);
+  const int pageItems = theme.getListPageItems(listHeight, hasSubtitle);
   const int pageStart = std::max(0, selectedIndex / pageItems) * pageItems;
-  const int row = (y - listTop) / rowHeight;
+  const int row = (y - listTop) / rowStep;
   const int tapped = pageStart + row;
   if (row < 0 || row >= pageItems || tapped >= itemCount) return false;
   index = tapped;

@@ -302,6 +302,16 @@ void RoundedRaffTheme::drawKeyboardKey(const GfxRenderer& renderer, Rect rect, c
   }
 }
 
+int RoundedRaffTheme::getListRowStep(bool hasSubtitle) const {
+  const int rowHeight =
+      hasSubtitle ? RoundedRaffMetrics::values.listWithSubtitleRowHeight : RoundedRaffMetrics::values.listRowHeight;
+  return rowHeight + kSelectableRowGap;
+}
+
+int RoundedRaffTheme::getListPageItems(int contentHeight, bool hasSubtitle) const {
+  return std::max(1, contentHeight / getListRowStep(hasSubtitle));
+}
+
 void RoundedRaffTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
                                 const std::function<std::string(int index)>& rowTitle,
                                 const std::function<std::string(int index)>& rowSubtitle,

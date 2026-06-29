@@ -83,6 +83,8 @@ class KeyboardEntryActivity : public Activity {
 
   static constexpr uint16_t LONG_PRESS_MS = 500;
   static constexpr uint16_t DEL_LONG_PRESS_MS = 1500;
+  static constexpr uint16_t TOUCH_LONG_PRESS_MS = 350;
+  static constexpr uint16_t TOUCH_DEL_LONG_PRESS_MS = 900;
 
   static constexpr int COLS = 10;
   static constexpr int ABC_ROWS = 4;

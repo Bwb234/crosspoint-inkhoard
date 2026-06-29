@@ -295,9 +295,9 @@ void KeyboardEntryActivity::loop() {
       requestUpdate();
     }
     const unsigned long longPressMs =
-        isBottomRow(selectedRow) && selectedCol == static_cast<int>(SpecialKeyType::Del) ? DEL_LONG_PRESS_MS
-                                                                                        : LONG_PRESS_MS;
-    if (!touchKeyLongHandled && millis() - touchKeyStart > longPressMs && handleLongPressOnSelectedKey()) {
+        isBottomRow(selectedRow) && selectedCol == static_cast<int>(SpecialKeyType::Del) ? TOUCH_DEL_LONG_PRESS_MS
+                                                                                        : TOUCH_LONG_PRESS_MS;
+    if (!touchKeyLongHandled && millis() - touchKeyStart >= longPressMs && handleLongPressOnSelectedKey()) {
       touchKeyLongHandled = true;
       requestUpdate();
     }

@@ -176,12 +176,12 @@ void SettingsActivity::loop() {
   auto settingIndexFromPoint = [&](const int x, const int y, int& settingIndex) {
     (void)x;
     if (settingsCount <= 0 || y < listTop || y >= listTop + listHeight) return false;
-    const int rowHeight = metrics.listRowHeight;
-    if (rowHeight <= 0) return false;
-    const int pageItems = std::max(1, listHeight / rowHeight);
+    const int rowStep = GUI.getListRowStep(false);
+    if (rowStep <= 0) return false;
+    const int pageItems = GUI.getListPageItems(listHeight, false);
     const int selectedRow = std::max(0, selectedSettingIndex - 1);
     const int pageStart = selectedRow / pageItems * pageItems;
-    const int row = (y - listTop) / rowHeight;
+    const int row = (y - listTop) / rowStep;
     const int touched = pageStart + row;
     if (row < 0 || row >= pageItems || touched < 0 || touched >= settingsCount) return false;
     settingIndex = touched + 1;
@@ -232,10 +232,10 @@ void SettingsActivity::loop() {
 
   // Handle navigation
   const auto& navMetrics = UITheme::getInstance().getMetrics();
-  const int settingsPageItems = std::max(
-      1, (renderer.getScreenHeight() - (navMetrics.topPadding + navMetrics.headerHeight + navMetrics.tabBarHeight +
-                                        navMetrics.buttonHintsHeight + navMetrics.verticalSpacing * 2)) /
-             std::max(1, navMetrics.listRowHeight));
+  const int settingsListHeight =
+      renderer.getScreenHeight() - (navMetrics.topPadding + navMetrics.headerHeight + navMetrics.tabBarHeight +
+                                    navMetrics.buttonHintsHeight + navMetrics.verticalSpacing * 2);
+  const int settingsPageItems = GUI.getListPageItems(settingsListHeight, false);
   const auto swipe = mappedInput.wasSwipe();
   if (swipe == MappedInputManager::SwipeDir::Up) {
     selectedSettingIndex = selectedSettingIndex == 0 ? 1

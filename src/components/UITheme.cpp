@@ -75,8 +75,7 @@ int UITheme::getNumberOfItemsPerPage(const GfxRenderer& renderer, bool hasHeader
     reservedHeight += metrics.verticalSpacing + metrics.buttonHintsHeight;
   }
   const int availableHeight = renderer.getScreenHeight() - reservedHeight - extraReservedHeight;
-  int rowHeight = hasSubtitle ? metrics.listWithSubtitleRowHeight : metrics.listRowHeight;
-  return availableHeight / rowHeight;
+  return UITheme::getInstance().getTheme().getListPageItems(availableHeight, hasSubtitle);
 }
 
 // Screen area excluding the button hints

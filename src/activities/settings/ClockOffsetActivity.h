@@ -5,6 +5,8 @@
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
+struct Rect;
+
 // Dedicated UTC offset picker for the status bar clock.
 // Three editable fields (sign, hours, minutes); Confirm cycles fields, Up/Down adjust the active one.
 // Supports the full IANA UTC offset range in 15 minute steps, including oddball zones like Nepal (+5:45).
@@ -35,6 +37,8 @@ class ClockOffsetActivity final : public Activity {
   void loadFromSettings();
   void saveToSettings() const;
   void adjustActiveField(int delta);
+  void adjustOffset(int deltaQuarterHours);
   void clampForSign();
   bool fieldFromPoint(int x, int y, Field& field) const;
+  void getTouchControlRects(Rect& minusRect, Rect& plusRect) const;
 };

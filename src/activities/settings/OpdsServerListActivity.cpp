@@ -68,7 +68,7 @@ void OpdsServerListActivity::loop() {
       return;
     }
 
-    const int pageItems = std::max(1, contentHeight / std::max(1, metrics.listWithSubtitleRowHeight));
+    const int pageItems = GUI.getListPageItems(contentHeight, true);
     const auto swipe = mappedInput.wasSwipe();
     if (swipe == MappedInputManager::SwipeDir::Up) {
       selectedIndex = ButtonNavigator::nextPageIndex(selectedIndex, itemCount, pageItems);

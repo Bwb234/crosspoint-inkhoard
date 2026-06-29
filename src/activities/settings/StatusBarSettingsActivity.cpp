@@ -132,14 +132,14 @@ void StatusBarSettingsActivity::loop() {
   const int contentHeight =
       renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
   int touched = -1;
-  if (mappedInput.wasListItemTouchedDown(touched, visibleItemCount, selectedIndex, contentTop, contentHeight, true)) {
+  if (mappedInput.wasListItemTouchedDown(touched, visibleItemCount, selectedIndex, contentTop, contentHeight, false)) {
     if (selectedIndex != touched) {
       selectedIndex = touched;
       requestUpdate();
     }
     return;
   }
-  if (mappedInput.wasListItemTapped(touched, visibleItemCount, selectedIndex, contentTop, contentHeight, true)) {
+  if (mappedInput.wasListItemTapped(touched, visibleItemCount, selectedIndex, contentTop, contentHeight, false)) {
     selectedIndex = touched;
     handleSelection();
     requestUpdate();
