@@ -145,6 +145,51 @@ void OtaUpdateActivity::render(RenderLock&&) {
 
 void OtaUpdateActivity::loop() {
   if (state == WAITING_CONFIRMATION) {
+    int x = 0;
+    int y = 0;
+    if (mappedInput.wasScreenTapped(x, y)) {
+      const int bottomActionTop = renderer.getScreenHeight() - 80;
+      if (y >= bottomActionTop) {
+        if (x < renderer.getScreenWidth() / 2) {
+          finish();
+          return;
+        }
+        LOG_DBG("OTA", "New update available, starting download from touch confirm...");
+        {
+          RenderLock lock(*this);
+          state = UPDATE_IN_PROGRESS;
+        }
+        requestUpdateAndWait();
+        const auto res = updater.installUpdate(
+            [](void* ctx) {
+              static_cast<OtaUpdateActivity*>(ctx)->requestUpdate(true);
+            },
+            this);
+
+        if (res != OtaUpdater::OK) {
+          LOG_DBG("OTA", "Update failed: %d", res);
+          {
+            RenderLock lock(*this);
+            state = FAILED;
+          }
+          requestUpdate();
+          return;
+        }
+
+        {
+          RenderLock lock(*this);
+          state = FINISHED;
+        }
+        requestUpdateAndWait();
+        delay(3000);
+        {
+          RenderLock lock(*this);
+          state = SHUTTING_DOWN;
+        }
+        return;
+      }
+    }
+
     if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
       LOG_DBG("OTA", "New update available, starting download...");
       {
@@ -192,14 +237,18 @@ void OtaUpdateActivity::loop() {
   }
 
   if (state == FAILED) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    int x = 0;
+    int y = 0;
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
       finish();
     }
     return;
   }
 
   if (state == NO_UPDATE) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    int x = 0;
+    int y = 0;
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
       finish();
     }
     return;

@@ -156,7 +156,9 @@ void ClearCacheActivity::loop() {
   }
 
   if (state == SUCCESS || state == FAILED) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    int x = 0;
+    int y = 0;
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
       goBack();
     }
     return;
