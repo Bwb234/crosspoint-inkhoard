@@ -60,7 +60,8 @@ bool parseUrl(const std::string& url, ParsedUrl& parsed) {
   parsed.scheme = url.substr(0, schemeEnd);
   const size_t hostStart = schemeEnd + 3;
   const size_t pathStart = url.find('/', hostStart);
-  const std::string hostPort = pathStart == std::string::npos ? url.substr(hostStart) : url.substr(hostStart, pathStart - hostStart);
+  const std::string hostPort =
+      pathStart == std::string::npos ? url.substr(hostStart) : url.substr(hostStart, pathStart - hostStart);
   parsed.path = pathStart == std::string::npos ? "/" : url.substr(pathStart);
   const size_t portSep = hostPort.rfind(':');
   if (portSep != std::string::npos) {
@@ -76,14 +77,14 @@ bool parseUrl(const std::string& url, ParsedUrl& parsed) {
 std::string resolveRedirectUrl(const ParsedUrl& base, const std::string& location) {
   if (location.find("://") != std::string::npos) return location;
   if (!location.empty() && location[0] == '/') {
-    return base.scheme + "://" + base.host + (base.port == 80 || base.port == 443 ? "" : ":" + std::to_string(base.port)) +
-           location;
+    return base.scheme + "://" + base.host +
+           (base.port == 80 || base.port == 443 ? "" : ":" + std::to_string(base.port)) + location;
   }
   std::string parent = base.path;
   const size_t slash = parent.rfind('/');
   parent = slash == std::string::npos ? "/" : parent.substr(0, slash + 1);
-  return base.scheme + "://" + base.host + (base.port == 80 || base.port == 443 ? "" : ":" + std::to_string(base.port)) +
-         parent + location;
+  return base.scheme + "://" + base.host +
+         (base.port == 80 || base.port == 443 ? "" : ":" + std::to_string(base.port)) + parent + location;
 }
 
 bool readLine(Client& client, std::string& line, const unsigned long deadline) {

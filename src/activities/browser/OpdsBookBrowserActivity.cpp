@@ -22,7 +22,7 @@ namespace {
 constexpr int PAGE_ITEMS = 23;
 constexpr int DOWNLOAD_PROGRESS_STEP_PERCENT = 5;
 constexpr unsigned long DOWNLOAD_PROGRESS_MIN_UPDATE_MS = 5000;
-}
+}  // namespace
 
 void OpdsBookBrowserActivity::onEnter() {
   Activity::onEnter();
@@ -196,7 +196,8 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
     return;
   }
 
-  std::string url = (path.find("http") == 0) ? UrlUtils::encodeUnsafeUrlChars(path) : UrlUtils::buildUrl(server.url, path);
+  std::string url =
+      (path.find("http") == 0) ? UrlUtils::encodeUnsafeUrlChars(path) : UrlUtils::buildUrl(server.url, path);
   LOG_DBG("OPDS", "Fetching: %s", url.c_str());
   OpdsParser parser;
   {
@@ -239,9 +240,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   requestUpdate();
 }
 
-void OpdsBookBrowserActivity::releaseEntries() {
-  std::vector<OpdsEntry>().swap(entries);
-}
+void OpdsBookBrowserActivity::releaseEntries() { std::vector<OpdsEntry>().swap(entries); }
 
 void OpdsBookBrowserActivity::navigateToEntry(const OpdsEntry& entry) {
   navigationHistory.push_back(currentPath);
