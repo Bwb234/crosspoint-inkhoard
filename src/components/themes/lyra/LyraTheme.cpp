@@ -205,6 +205,28 @@ void LyraTheme::drawTabBar(const GfxRenderer& renderer, Rect rect, const std::ve
   renderer.drawLine(rect.x, rect.y + rect.height - 1, rect.x + rect.width - 1, rect.y + rect.height - 1, true);
 }
 
+bool LyraTheme::tabIndexFromPoint(const GfxRenderer& renderer, const Rect rect, const std::vector<TabInfo>& tabs,
+                                  const int x, const int y, int& index) const {
+  if (tabs.empty() || y < rect.y || y >= rect.y + rect.height) {
+    return false;
+  }
+
+  int currentX = rect.x + LyraMetrics::values.contentSidePadding;
+  for (size_t i = 0; i < tabs.size(); i++) {
+    const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, tabs[i].label, EpdFontFamily::REGULAR);
+    const int tabWidth = textWidth + 2 * hPaddingInSelection;
+    const int left = (i == 0) ? rect.x : currentX - LyraMetrics::values.tabSpacing / 2;
+    const int right = currentX + tabWidth + LyraMetrics::values.tabSpacing / 2;
+    if (x >= left && x < right) {
+      index = static_cast<int>(i);
+      return true;
+    }
+    currentX += tabWidth + LyraMetrics::values.tabSpacing;
+  }
+
+  return false;
+}
+
 int LyraTheme::getListRowStep(bool hasSubtitle) const {
   int rowHeight = (hasSubtitle) ? LyraMetrics::values.listWithSubtitleRowHeight : LyraMetrics::values.listRowHeight;
   return rowHeight;

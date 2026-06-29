@@ -173,6 +173,14 @@ void SettingsActivity::loop() {
   const int listHeight =
       renderer.getScreenHeight() - (metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight +
                                     metrics.buttonHintsHeight + metrics.verticalSpacing * 2);
+  auto buildTabs = [&]() {
+    std::vector<TabInfo> tabs;
+    tabs.reserve(categoryCount);
+    for (int i = 0; i < categoryCount; i++) {
+      tabs.push_back({I18N.get(categoryNames[i]), selectedCategoryIndex == i});
+    }
+    return tabs;
+  };
   auto settingIndexFromPoint = [&](const int x, const int y, int& settingIndex) {
     (void)x;
     if (settingsCount <= 0 || y < listTop || y >= listTop + listHeight) return false;
@@ -189,9 +197,10 @@ void SettingsActivity::loop() {
   };
 
   if (mappedInput.wasScreenTouchDown(tx, ty)) {
-    if (ty >= tabTop && ty < tabTop + metrics.tabBarHeight) {
-      const int tabWidth = std::max(1, renderer.getScreenWidth() / categoryCount);
-      const int touchedCategory = std::min(categoryCount - 1, std::max(0, tx / tabWidth));
+    int touchedCategory = -1;
+    const auto tabs = buildTabs();
+    if (GUI.tabIndexFromPoint(renderer, Rect{0, tabTop, renderer.getScreenWidth(), metrics.tabBarHeight}, tabs, tx, ty,
+                              touchedCategory)) {
       if (selectedCategoryIndex != touchedCategory || selectedSettingIndex != 0) {
         selectedCategoryIndex = touchedCategory;
         selectedSettingIndex = 0;
@@ -212,9 +221,11 @@ void SettingsActivity::loop() {
   }
 
   if (mappedInput.wasScreenTapped(tx, ty)) {
-    if (ty >= tabTop && ty < tabTop + metrics.tabBarHeight) {
-      const int tabWidth = std::max(1, renderer.getScreenWidth() / categoryCount);
-      selectedCategoryIndex = std::min(categoryCount - 1, std::max(0, tx / tabWidth));
+    int tappedCategory = -1;
+    const auto tabs = buildTabs();
+    if (GUI.tabIndexFromPoint(renderer, Rect{0, tabTop, renderer.getScreenWidth(), metrics.tabBarHeight}, tabs, tx, ty,
+                              tappedCategory)) {
+      selectedCategoryIndex = tappedCategory;
       selectedSettingIndex = 0;
       applyCategorySelection();
       requestUpdate();

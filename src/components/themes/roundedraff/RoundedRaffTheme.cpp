@@ -113,6 +113,19 @@ void RoundedRaffTheme::drawTabBar(const GfxRenderer& renderer, Rect rect, const 
   renderer.drawLine(rect.x, rect.y + rect.height - 1, rect.x + rect.width - 1, rect.y + rect.height - 1, true);
 }
 
+bool RoundedRaffTheme::tabIndexFromPoint(const GfxRenderer& renderer, const Rect rect,
+                                         const std::vector<TabInfo>& tabs, const int x, const int y,
+                                         int& index) const {
+  (void)renderer;
+  if (tabs.empty() || y < rect.y || y >= rect.y + rect.height || x < rect.x || x >= rect.x + rect.width) {
+    return false;
+  }
+
+  const int slotWidth = std::max(1, rect.width / static_cast<int>(tabs.size()));
+  index = std::min(static_cast<int>(tabs.size()) - 1, (x - rect.x) / slotWidth);
+  return true;
+}
+
 void RoundedRaffTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
                                            const int selectorIndex, bool& coverRendered, bool& coverBufferStored,
                                            bool& bufferRestored, std::function<bool()> storeCoverBuffer) const {
