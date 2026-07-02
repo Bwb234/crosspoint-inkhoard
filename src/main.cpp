@@ -503,7 +503,41 @@ void setup() {
 void updateBluetoothLifecycle() {
   const bool wanted =
       SETTINGS.bluetoothEnabled && activityManager.bluetoothShouldBeActive() && WiFi.getMode() == WIFI_MODE_NULL;
+  // Track recovery teardowns: while the reader's build recovery holds the lifecycle
+  // paused it has taken BLE down deliberately. After that, hold a cool-down before any
+  // restart -- an immediate restart re-enters the exact heap state that just failed and
+  // the lifecycle becomes an oscillator (restart -> connect popup -> build fails ->
+  // teardown -> restart...), observed in the field as a "BT Connecting..." loop.
+  static uint32_t recoveryTeardownMs = 0;
+  if (bleinput::lifecyclePaused()) recoveryTeardownMs = millis();
   if (wanted && !BleHid.isRunning() && bleinput::lifecyclePaused()) return;
+  static constexpr uint32_t BLE_RESTART_COOLDOWN_MS = 30 * 1000;
+  const bool inCooldown = recoveryTeardownMs != 0 && millis() - recoveryTeardownMs < BLE_RESTART_COOLDOWN_MS;
+  // Heap gate: NimBLE needs ~57 KB, and the section-build pre-flight needs 40 KB free
+  // AFTER the stack is up -- so anything below ~100 KB just re-enters build recovery
+  // and tears BLE straight back down. (A first cut used 70 KB for restarts; 70-57=13 KB
+  // left for builds, guaranteeing the oscillation above.) Defer and retry next loop;
+  // the build path's silent-restart defrag yields ~118 KB and passes this gate.
+  static constexpr size_t BLE_START_MIN_FREE_HEAP = 100 * 1024;
+  static bool deferralAnnounced = false;
+  if (wanted && !BleHid.isRunning() && (inCooldown || ESP.getFreeHeap() < BLE_START_MIN_FREE_HEAP)) {
+    static uint32_t lastGateLogMs = 0;
+    if (millis() - lastGateLogMs > 10000) {
+      lastGateLogMs = millis();
+      LOG_INF("BLELC", "start deferred: heap %u floor %u cooldown=%d", ESP.getFreeHeap(),
+              (unsigned)BLE_START_MIN_FREE_HEAP, inCooldown ? 1 : 0);
+    }
+    // Tell the reader once per deferral episode that the remote is paused -- otherwise
+    // the only symptom is a remote that silently stopped working. Draws into the
+    // existing framebuffer (no heap); the next page render clears it via ghost cleanup.
+    if (!deferralAnnounced && activityManager.isReaderActivity() && BleHid.pairedCount() > 0) {
+      deferralAnnounced = true;
+      RenderLock renderLock;
+      GUI.drawPopup(renderer, tr(STR_BT_PAUSED_LOW_MEM_POPUP));
+      activityManager.requestGhostCleanup();
+    }
+    return;
+  }
   if (wanted && !BleHid.isRunning()) {
     LOG_INF("BLELC", "start requested enabled=%u reader=%d settings=%d wifi=%d paired=%u heap=%u maxAlloc=%u",
             SETTINGS.bluetoothEnabled, activityManager.isReaderActivity(), activityManager.currentKeepsBluetoothAlive(),
@@ -515,6 +549,8 @@ void updateBluetoothLifecycle() {
     }
     LOG_INF("BLELC", "started paired=%u heap=%u maxAlloc=%u", BleHid.pairedCount(), ESP.getFreeHeap(),
             ESP.getMaxAllocHeap());
+    recoveryTeardownMs = 0;     // stack is back; clear the cool-down
+    deferralAnnounced = false;  // re-announce if a later episode defers again
     HalPowerManager::Lock powerLock;
     const bool showReconnectPopup =
         activityManager.isReaderActivity() && !activityManager.currentKeepsBluetoothAlive() && BleHid.pairedCount() > 0;
