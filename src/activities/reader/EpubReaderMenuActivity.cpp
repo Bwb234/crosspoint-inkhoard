@@ -2,9 +2,12 @@
 
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <Logging.h>
 
+#include "BleInput.h"
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "SilentRestart.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -84,6 +87,15 @@ void EpubReaderMenuActivity::loop() {
       // so start/stop has a single owner.
       SETTINGS.bluetoothEnabled = SETTINGS.bluetoothEnabled ? 0 : 1;
       SETTINGS.saveToFile();
+      // Turning BT on below the lifecycle's heap floor would otherwise sit in PAUSED
+      // until the heap happens to recover -- which a long session's fragmentation never
+      // gives back. The user asked for BT *now*: silent-restart into this book to
+      // defrag (fresh boot is ~118 KB free, comfortably above the floor), and BT
+      // auto-starts on the way back in.
+      if (SETTINGS.bluetoothEnabled && !BleHid.isRunning() && ESP.getFreeHeap() < bleinput::kStartMinFreeHeap) {
+        LOG_INF("ERM", "BT enabled below heap floor (%u); silent restart to defrag", ESP.getFreeHeap());
+        silentRestartToReader();
+      }
       requestUpdate();
       return;
     }
@@ -138,8 +150,12 @@ void EpubReaderMenuActivity::render(RenderLock&&) {
           // Render current page turn value on the right edge of the content area.
           return pageTurnLabels[selectedPageTurnOption];
         } else if (value == MenuAction::TOGGLE_BLUETOOTH) {
-          // Render current Bluetooth on/off state on the right edge.
-          return SETTINGS.bluetoothEnabled ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
+          // Render current Bluetooth state on the right edge. "Enabled but the stack
+          // isn't running" is the low-memory deferral -- show PAUSED, not a lie.
+          if (SETTINGS.bluetoothEnabled) {
+            return BleHid.isRunning() ? tr(STR_STATE_ON) : tr(STR_STATE_PAUSED);
+          }
+          return tr(STR_STATE_OFF);
         } else {
           return "";
         }

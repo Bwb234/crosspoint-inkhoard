@@ -25,6 +25,12 @@ namespace bleinput {
 // Advertised central name shown to peripherals during pairing.
 inline constexpr const char* kHostName = "CrossPoint";
 
+// Heap floor for starting the NimBLE stack (~57 KB) while leaving the reader's
+// section-build pre-flight (40 KB) satisfiable afterwards. Shared by the main-loop
+// lifecycle gate and the reader menu's toggle (which offers a defrag restart when a
+// user turns BT on below the floor).
+inline constexpr size_t kStartMinFreeHeap = 100 * 1024;
+
 // Start the BLE HID host (idempotent). Returns false if BLE is compiled out or
 // NimBLE init failed. Safe to call repeatedly.
 bool ensureStarted();
