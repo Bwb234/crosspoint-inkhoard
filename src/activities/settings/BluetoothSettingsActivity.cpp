@@ -182,14 +182,14 @@ void BluetoothSettingsActivity::loop() {
     if (view == View::Menu) {
       handleMenuConfirm();
     } else if (view == View::Scan) {
-      const int count = BleHid.deviceCount();
-      if (!awaitingConnect && count == 0 && !BleHid.isScanning()) {
+      const int scanCount = BleHid.deviceCount();
+      if (!awaitingConnect && scanCount == 0 && !BleHid.isScanning()) {
         LOG_INF("BLEUI", "scan view: restart scan requested");
         BleHid.startScan(kScanMs);
         LOG_INF("BLEUI", "scan view: restart scan state scanning=%d devices=%u", BleHid.isScanning(),
                 BleHid.deviceCount());
         requestUpdate();
-      } else if (!awaitingConnect && scanIndex < count) {
+      } else if (!awaitingConnect && scanIndex < scanCount) {
         if (BleHid.isScanning()) BleHid.stopScan();
         const auto& d = BleHid.device(static_cast<uint8_t>(scanIndex));
         LOG_INF("BLEUI", "scan view: connect addr=%s name='%s' rssi=%d type=%u hid=%d conn=%d", d.addr, d.name, d.rssi,
