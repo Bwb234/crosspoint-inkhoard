@@ -148,6 +148,10 @@ std::unique_ptr<Page> Page::deserialize(HalFile& file) {
 
   uint16_t count;
   serialization::readPod(file, count);
+  // Reserve up front: growth-by-doubling needs old + new capacity live at once and
+  // reallocates repeatedly — a field crash (bad_alloc -> abort under -fno-exceptions)
+  // hit exactly this append path on a heavily fragmented heap.
+  page->elements.reserve(count);
 
   for (uint16_t i = 0; i < count; i++) {
     uint8_t tag;

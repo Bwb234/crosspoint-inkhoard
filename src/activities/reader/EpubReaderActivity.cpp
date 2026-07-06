@@ -269,9 +269,12 @@ void EpubReaderActivity::loop() {
   // RenderLock and locked out page turns. The build follows the reader instead, and instant
   // reopen comes from suspendBuild() persisting the laid-out pages as a partial on exit.
   // Skip while the render mutex is busy so we never delay a pending render; re-check
-  // isBuilding() under the lock since render() may have just finished it.
+  // isBuilding() under the lock since render() may have just finished it. Also skip
+  // while free heap is below the floor — the tick is deferrable, and parsing into a
+  // starved heap abort()s (see BACKGROUND_BUILD_MIN_FREE_HEAP).
   if (section && section->isBuilding() && !RenderLock::peek() &&
-      static_cast<int>(section->pageCount) < section->currentPage + BUILD_WINDOW_AHEAD) {
+      static_cast<int>(section->pageCount) < section->currentPage + BUILD_WINDOW_AHEAD &&
+      ESP.getFreeHeap() >= BACKGROUND_BUILD_MIN_FREE_HEAP) {
     RenderLock lock;
     // Re-check under the lock: render() (which also holds the RenderLock) may have finalized the
     // build between the outer isBuilding() check and acquiring the lock here, in which case
@@ -897,6 +900,20 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   struct LifecycleUnpause {
     ~LifecycleUnpause() { bleinput::setLifecyclePaused(false); }
   } lifecycleUnpause;
+
+  // Shed the BLE stack before rendering into a starved heap. Everything below —
+  // page deserialization, glyph caching, catch-up build steps — allocates through
+  // throwing paths that abort() on OOM under -fno-exceptions. Field data: with no
+  // shed, a session ground to <2.2 KB free (per-glyph SD fallbacks, no AA, 4.7 s
+  // pages) and then aborted on a tiny vector growth. Freeing BLE returns ~52 KB and
+  // restores a large contiguous block; the lifecycle restarts it behind its heap
+  // gate once the pressure passes.
+  if (BleHid.isRunning() && ESP.getFreeHeap() < RENDER_MIN_FREE_HEAP) {
+    LOG_ERR("ERS", "Render heap %u below floor %u; freeing BLE RAM", (unsigned)ESP.getFreeHeap(),
+            (unsigned)RENDER_MIN_FREE_HEAP);
+    bleinput::setLifecyclePaused(true);
+    bleinput::stop();
+  }
 
   const auto showPendingSyncSaveError = [this]() {
     if (!pendingSyncSaveError) return;

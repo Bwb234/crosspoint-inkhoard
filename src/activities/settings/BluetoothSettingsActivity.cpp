@@ -7,6 +7,7 @@
 #include <cstdio>
 
 #include "BleButtonMapActivity.h"
+#include "BleInput.h"
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "components/UITheme.h"
@@ -57,6 +58,13 @@ void BluetoothSettingsActivity::startScanView() {
   awaitingConnect = false;
   lastLoggedScanState = false;
   lastLoggedDeviceCount = 0xFF;
+  // The main-loop lifecycle owns steady-state start/stop, but a scan needs the stack
+  // this instant — entering this screen can precede the lifecycle's next tick, or its
+  // heap gate may have deferred the start. ensureStarted() is idempotent, and with
+  // this screen on top the lifecycle keeps the stack up (keepsBluetoothAlive).
+  if (!BleHid.isRunning() && !bleinput::ensureStarted()) {
+    LOG_ERR("BLEUI", "scan: BLE start failed (heap=%u)", ESP.getFreeHeap());
+  }
   BleHid.startScan(kScanMs);
   LOG_INF("BLEUI", "scan view: startScan requested scanning=%d devices=%u", BleHid.isScanning(), BleHid.deviceCount());
   requestUpdate();
@@ -185,6 +193,9 @@ void BluetoothSettingsActivity::loop() {
       const int scanCount = BleHid.deviceCount();
       if (!awaitingConnect && scanCount == 0 && !BleHid.isScanning()) {
         LOG_INF("BLEUI", "scan view: restart scan requested");
+        if (!BleHid.isRunning() && !bleinput::ensureStarted()) {
+          LOG_ERR("BLEUI", "scan restart: BLE start failed (heap=%u)", ESP.getFreeHeap());
+        }
         BleHid.startScan(kScanMs);
         LOG_INF("BLEUI", "scan view: restart scan state scanning=%d devices=%u", BleHid.isScanning(),
                 BleHid.deviceCount());

@@ -25,11 +25,22 @@ namespace bleinput {
 // Advertised central name shown to peripherals during pairing.
 inline constexpr const char* kHostName = "CrossPoint";
 
-// Heap floor for starting the NimBLE stack (~57 KB) while leaving the reader's
-// section-build pre-flight (40 KB) satisfiable afterwards. Shared by the main-loop
-// lifecycle gate and the reader menu's toggle (which offers a defrag restart when a
-// user turns BT on below the floor).
-inline constexpr size_t kStartMinFreeHeap = 100 * 1024;
+// Heap floor for starting the NimBLE stack (measured begin() cost: ~52 KB). This must
+// be reachable in steady-state reading, not just at fresh boot: with an SD font and a
+// loaded section, mid-session idle heap is ~84 KB — a 100 KB floor was only ever
+// passed via a stale-gate bug (heap sampled before the render lock), and once that
+// was fixed the stack could never start again after a shed. 80 KB starts at ~84 KB
+// steady state and leaves ~32 KB of reading slack; the render shed floor
+// (RENDER_MIN_FREE_HEAP, 24 KB) backstops the tight sessions, and the lifecycle
+// cooldown paces any shed/restart cycle. Shared by the main-loop lifecycle gate and
+// the reader menu's toggle (which offers a defrag restart below the floor).
+inline constexpr size_t kStartMinFreeHeap = 80 * 1024;
+
+// Lower floor for the Bluetooth settings screen, where the user has explicitly asked
+// for BLE right now (scanning/pairing is dead without the stack). No page renders or
+// section builds run there, so the reader-sized reserve above doesn't apply — only
+// NimBLE's own ~57 KB plus working margin.
+inline constexpr size_t kStartMinFreeHeapExplicit = 70 * 1024;
 
 // Start the BLE HID host (idempotent). Returns false if BLE is compiled out or
 // NimBLE init failed. Safe to call repeatedly.

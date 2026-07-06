@@ -67,6 +67,13 @@ class EpubReaderActivity final : public Activity {
   // (MIN_FREE_HEAP_FOR_CSS), so 40 KB trades a few early BLE teardowns for not crashing.
   static constexpr size_t BUILD_MIN_FREE_HEAP = 40 * 1024;
 
+  // Heap floor for rendering a page at all. Page deserialization (TextBlock word
+  // vectors/strings) and glyph caching allocate through throwing paths that abort()
+  // on OOM; below this floor render() sheds the BLE stack (~52 KB back, and it
+  // restores a large contiguous block) before touching the page. Field data: a
+  // session with no shed ground to <2.2 KB free and aborted on a page load.
+  static constexpr size_t RENDER_MIN_FREE_HEAP = 24 * 1024;
+
   void renderContents(std::unique_ptr<Page> page, int orientedMarginTop, int orientedMarginRight,
                       int orientedMarginBottom, int orientedMarginLeft);
   void renderStatusBar() const;
@@ -75,6 +82,14 @@ class EpubReaderActivity final : public Activity {
   // background build chunk never noticeably delays input or a pending render.
   static constexpr int BUILD_PAGES_PER_CHUNK = 8;
   static constexpr int BACKGROUND_BUILD_PAGES_PER_TICK = 2;
+
+  // Skip background build ticks below this free-heap floor. The parse path grows
+  // word vectors of heap strings — throwing allocations that abort() on OOM under
+  // -fno-exceptions (field crash: bad_alloc in ParsedText::addWord during a
+  // background tick with the BLE stack resident). The tick is deferrable work:
+  // page-turn transients free up between turns and the build resumes; the render
+  // path still builds the page it actually needs regardless of this floor.
+  static constexpr size_t BACKGROUND_BUILD_MIN_FREE_HEAP = 32 * 1024;
   // How many pages to keep laid out ahead of the reader for a still-building section. A page
   // turn is ~1s on e-ink and a page builds in ~30ms, so the reader can't out-click the builder
   // -- a tiny buffer is enough. The background build stops once the watermark is this far

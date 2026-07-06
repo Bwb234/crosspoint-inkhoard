@@ -520,12 +520,18 @@ void updateBluetoothLifecycle() {
   // the reader menu's toggle offers a defrag restart, and the build path's silent
   // restart also yields ~118 KB and passes this gate.
   static bool deferralAnnounced = false;
-  if (wanted && !BleHid.isRunning() && (inCooldown || ESP.getFreeHeap() < bleinput::kStartMinFreeHeap)) {
+  // The BT settings screen is explicit user intent to run BLE right now (scan/pair is
+  // dead without the stack). Its floor only needs to cover NimBLE itself — the 100 KB
+  // reader floor reserves build/render headroom that never gets used there — and the
+  // cooldown protects the reader's build-recovery loop, which can't occur in settings.
+  const bool explicitBtContext = activityManager.currentKeepsBluetoothAlive();
+  const size_t startFloor = explicitBtContext ? bleinput::kStartMinFreeHeapExplicit : bleinput::kStartMinFreeHeap;
+  if (wanted && !BleHid.isRunning() && ((inCooldown && !explicitBtContext) || ESP.getFreeHeap() < startFloor)) {
     static uint32_t lastGateLogMs = 0;
     if (millis() - lastGateLogMs > 10000) {
       lastGateLogMs = millis();
-      LOG_INF("BLELC", "start deferred: heap %u floor %u cooldown=%d", ESP.getFreeHeap(),
-              (unsigned)bleinput::kStartMinFreeHeap, inCooldown ? 1 : 0);
+      LOG_INF("BLELC", "start deferred: heap %u floor %u cooldown=%d", ESP.getFreeHeap(), (unsigned)startFloor,
+              inCooldown ? 1 : 0);
     }
     // Tell the reader once per deferral episode that the remote is paused -- otherwise
     // the only symptom is a remote that silently stopped working. Draws into the
@@ -549,6 +555,15 @@ void updateBluetoothLifecycle() {
             SETTINGS.bluetoothEnabled, activityManager.isReaderActivity(), activityManager.currentKeepsBluetoothAlive(),
             WiFi.getMode(), BleHid.pairedCount(), ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     RenderLock renderLock;
+    // Re-check the floor under the lock: acquiring the RenderLock waits out any
+    // in-flight render, and a chapter open during that render consumes tens of KB —
+    // observed in the field as the gate passing at 116 KB free and begin() then
+    // landing on 44 KB, where the session ground down and aborted. Defer to the next
+    // tick; the gate re-evaluates against the settled heap.
+    if (ESP.getFreeHeap() < startFloor || bleinput::lifecyclePaused()) {
+      LOG_INF("BLELC", "start aborted under render lock: heap %u floor %u", ESP.getFreeHeap(), (unsigned)startFloor);
+      return;
+    }
     if (!bleinput::ensureStarted()) {
       LOG_ERR("BLELC", "start failed heap=%u maxAlloc=%u", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
       return;
