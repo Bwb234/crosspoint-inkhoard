@@ -113,6 +113,15 @@ bool MappedInputManager::wasScreenTouchDown(int& x, int& y) const {
   return true;
 }
 
+bool MappedInputManager::isScreenTouchHeld(int& x, int& y) const {
+  // Live contact position while the finger is down (no tap-slop gate) — drag tracking.
+  float nx = 0.0f;
+  float ny = 0.0f;
+  if (!gpio.isTouchHeldAt(nx, ny)) return false;
+  renderer.tapToLogical(nx, ny, x, y);
+  return true;
+}
+
 bool MappedInputManager::wasTapInRect(const int x, const int y, const int width, const int height) const {
   int tx = 0;
   int ty = 0;
