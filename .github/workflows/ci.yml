@@ -95,6 +95,11 @@ jobs:
           set -euo pipefail
           pio run | tee pio.log
 
+      - name: Build CrossPoint (Seeed Sticky)
+        run: |
+          set -euo pipefail
+          pio run -e sticky
+
       - name: Extract firmware stats
 
         run: |
