@@ -282,12 +282,15 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
           const uint8_t bmpVal = 3 - ((byte >> bit_index) & 0x3);
 
           if (renderMode == GfxRenderer::BW && bmpVal < 3) {
-            // Full coverage is solid ink; partial (anti-aliased edge) coverage
-            // dithers with the same period-2 patterns as fillRectDither
-            // (dark grey = 50% checkerboard, light grey = 25%), so 2-bit fonts
-            // render anti-aliased on BW passes instead of bolding every edge
-            // pixel to black. Skipped pixels leave the background untouched.
-            if (bmpVal == 0 || (bmpVal == 1 && ((screenX + screenY) & 1) == 0) ||
+            // Default: gray pixels paint solid black. Required when grayscale
+            // passes follow (their LUT lightens pixels it assumes were just
+            // driven solid black), and it is the plain non-AA look otherwise.
+            // Fast AA: partial (anti-aliased edge) coverage dithers with the
+            // same period-2 patterns as fillRectDither (dark grey = 50%
+            // checkerboard, light grey = 25%), approximating AA in a single
+            // BW pass. Skipped pixels leave the background untouched.
+            if (!renderer.isFastAntiAliasing() || bmpVal == 0 ||
+                (bmpVal == 1 && ((screenX + screenY) & 1) == 0) ||
                 (bmpVal == 2 && (screenX & 1) == 0 && (screenY & 1) == 0)) {
               renderer.drawPixel(screenX, screenY, pixelState);
             }

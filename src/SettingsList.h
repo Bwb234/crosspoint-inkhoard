@@ -157,8 +157,11 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
             "orientation", StrId::STR_CAT_READER),
         SettingInfo::Toggle(StrId::STR_EXTRA_SPACING, &CrossPointSettings::extraParagraphSpacing,
                             "extraParagraphSpacing", StrId::STR_CAT_READER),
-        SettingInfo::Toggle(StrId::STR_TEXT_AA, &CrossPointSettings::textAntiAliasing, "textAntiAliasing",
-                            StrId::STR_CAT_READER),
+        // Option order must match TEXT_ANTIALIASING values (popup index is
+        // stored directly): OFF=0, FULL=1 (legacy toggle "on"), FAST=2.
+        SettingInfo::Enum(StrId::STR_TEXT_AA, &CrossPointSettings::textAntiAliasing,
+                          {StrId::STR_STATE_OFF, StrId::STR_TEXT_AA_FULL, StrId::STR_TEXT_AA_FAST}, "textAntiAliasing",
+                          StrId::STR_CAT_READER),
         SettingInfo::Enum(StrId::STR_IMAGES, &CrossPointSettings::imageRendering,
                           {StrId::STR_IMAGES_DISPLAY, StrId::STR_IMAGES_PLACEHOLDER, StrId::STR_IMAGES_SUPPRESS},
                           "imageRendering", StrId::STR_CAT_READER),

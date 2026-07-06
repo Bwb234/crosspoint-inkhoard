@@ -400,13 +400,16 @@ void TxtReaderActivity::renderPage() {
   renderLines();  // scan pass — text accumulated, no drawing
   scope.endScanAndPrewarm();
 
-  // BW rendering
+  // BW rendering. Fast AA dithers 2-bit glyph edges in this single pass;
+  // scoped to the page text so nothing else inherits the flag.
+  renderer.setFastAntiAliasing(SETTINGS.textAntiAliasing == CrossPointSettings::TEXT_AA_FAST);
   renderLines();
+  renderer.setFastAntiAliasing(false);
   renderStatusBar();
 
   ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
 
-  if (SETTINGS.textAntiAliasing) {
+  if (SETTINGS.textAntiAliasing == CrossPointSettings::TEXT_AA_FULL) {
     ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); });
   }
   // scope destructor clears font cache via FontCacheManager

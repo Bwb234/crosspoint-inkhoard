@@ -173,6 +173,13 @@ class CrossPointSettings {
   // Image rendering in EPUB reader
   enum IMAGE_RENDERING { IMAGES_DISPLAY = 0, IMAGES_PLACEHOLDER = 1, IMAGES_SUPPRESS = 2, IMAGE_RENDERING_COUNT };
 
+  // Text anti-aliasing mode for 2-bit fonts. FULL runs the grayscale LUT
+  // passes after the BW page render (extra refresh per page turn). FAST
+  // approximates AA inside the single BW pass by dithering partial-coverage
+  // glyph pixels (GfxRenderer fast anti-aliasing flag). Value 1 must stay
+  // FULL: it was the "on" value of the old on/off toggle in saved settings.
+  enum TEXT_ANTIALIASING { TEXT_AA_OFF = 0, TEXT_AA_FULL = 1, TEXT_AA_FAST = 2, TEXT_ANTIALIASING_COUNT };
+
   enum TILT_PAGE_TURN { TILT_OFF = 0, TILT_NORMAL = 1, TILT_NVERTED = 2, TILT_PAGE_TURN_COUNT };
 
   enum QUICK_RESUME_SLEEP_SCREEN {
@@ -209,7 +216,7 @@ class CrossPointSettings {
   uint8_t clockHasBeenSynced = 0;
   // Text rendering settings
   uint8_t extraParagraphSpacing = 1;
-  uint8_t textAntiAliasing = 1;
+  uint8_t textAntiAliasing = TEXT_AA_FULL;
   // Short power button click behaviour
   uint8_t shortPwrBtn = IGNORE;
   // EPUB reading orientation settings

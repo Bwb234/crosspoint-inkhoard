@@ -44,6 +44,13 @@ class GfxRenderer {
   RenderMode renderMode;
   Orientation orientation;
   bool fadingFix;
+  // Fast text anti-aliasing: when set, BW-mode rendering of 2-bit glyphs
+  // dithers partial-coverage (gray) pixels instead of painting them solid
+  // black, approximating AA in a single BW pass with no grayscale refresh.
+  // Must stay false when grayscale LSB/MSB passes follow the BW render: the
+  // gray LUT lightens pixels it assumes were just driven solid black, and
+  // dither-skipped white pixels would take its white-drive frames unopposed.
+  bool fastAntiAliasing = false;
   uint8_t* frameBuffer = nullptr;
   uint16_t panelWidth = HalDisplay::DISPLAY_WIDTH;
   uint16_t panelHeight = HalDisplay::DISPLAY_HEIGHT;
@@ -224,6 +231,8 @@ class GfxRenderer {
   // Grayscale functions
   void setRenderMode(const RenderMode mode) { this->renderMode = mode; }
   RenderMode getRenderMode() const { return renderMode; }
+  void setFastAntiAliasing(const bool enabled) { this->fastAntiAliasing = enabled; }
+  bool isFastAntiAliasing() const { return fastAntiAliasing; }
   // Grayscale preconditioning settle pass (no-op on X4). The rect overload
   // takes the gray region in LOGICAL screen coordinates and rotates it to the
   // panel; the no-arg overload settles the full frame. Call after the BW base

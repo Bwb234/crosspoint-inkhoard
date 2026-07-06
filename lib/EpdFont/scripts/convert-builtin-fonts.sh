@@ -42,11 +42,8 @@ for size in ${UI_FONT_SIZES[@]}; do
     # (fontstack is ordered by descending priority).
     viet_path="../builtinFonts/source/Ubuntu/Ubuntu-Vietnamese-${style}.ttf"
     output_path="../builtinFonts/${font_name}.h"
-    # 2-bit like the reader fonts: full coverage renders solid in BW mode and
-    # partial edge coverage dithers (GfxRenderer renderCharImpl), so UI text is
-    # anti-aliased on 1-bit panels and blends properly in grayscale passes.
     python fontconvert.py $font_name $size $font_path $hebrew_path $viet_path \
-      --2bit --compress --additional-intervals 0x05D0,0x05EA > $output_path
+      --additional-intervals 0x05D0,0x05EA > $output_path
     echo "Generated $output_path"
   done
 done
@@ -54,7 +51,7 @@ done
 python fontconvert.py notosans_8_regular 8 \
   ../builtinFonts/source/NotoSans/NotoSans-Regular.ttf \
   ../builtinFonts/source/NotoSansHebrew/NotoSansHebrew-Regular.ttf \
-  --2bit --compress --additional-intervals 0x05D0,0x05EA > ../builtinFonts/notosans_8_regular.h
+  --additional-intervals 0x05D0,0x05EA > ../builtinFonts/notosans_8_regular.h
 
 echo ""
 echo "Running compression verification..."

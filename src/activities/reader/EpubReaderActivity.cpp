@@ -1241,7 +1241,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const auto tPrewarm = millis();
 
   const bool pageHasImages = page->hasImages();
-  const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
+  const bool needsTextGrayscale = SETTINGS.textAntiAliasing == CrossPointSettings::TEXT_AA_FULL;
+  const bool fastTextAA = SETTINGS.textAntiAliasing == CrossPointSettings::TEXT_AA_FAST;
   const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
   auto renderGrayscalePass = [&]() {
     if (needsTextGrayscale) {
@@ -1251,7 +1252,11 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     }
   };
 
+  // Fast AA dithers 2-bit glyph edges in the BW pass itself, no grayscale
+  // refresh. Scoped to the page render so nothing else inherits the flag.
+  renderer.setFastAntiAliasing(fastTextAA);
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+  renderer.setFastAntiAliasing(false);
   renderStatusBar();
   const auto tBwRender = millis();
 
@@ -1268,7 +1273,9 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 
       // Re-render page content to restore images into the blanked area
       // Status bar is not re-rendered here to avoid reading stale dynamic values (e.g. battery %)
+      renderer.setFastAntiAliasing(fastTextAA);
       page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+      renderer.setFastAntiAliasing(false);
       renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     } else {
       renderer.displayBuffer(HalDisplay::HALF_REFRESH);
