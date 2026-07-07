@@ -79,6 +79,8 @@ class KeyboardEntryActivity : public Activity {
   void onComplete(std::string text);
   void onCancel();
   bool keyFromPoint(int x, int y, int& row, int& col) const;
+  bool cursorPositionFromPoint(int x, int y, size_t& position) const;
+  std::string displayTextForCurrentState() const;
   bool handleLongPressOnSelectedKey();
 
   static constexpr uint16_t LONG_PRESS_MS = 500;

@@ -264,6 +264,115 @@ bool KeyboardEntryActivity::keyFromPoint(const int x, const int y, int& row, int
   return false;
 }
 
+std::string KeyboardEntryActivity::displayTextForCurrentState() const {
+  std::string displayText = text;
+  if (inputType != InputType::Password || passwordVisible) {
+    return displayText;
+  }
+
+  size_t revealPos;
+  if (cursorMode) {
+    revealPos = text.length();  // no reveal in displayText; block draws actual char directly
+  } else {
+    revealPos = (text.length() > 0 && cursorPos > 0) ? cursorPos - 1 : std::string::npos;
+  }
+  for (size_t i = 0; i < displayText.length(); i++) {
+    if (i != revealPos) {
+      displayText[i] = '*';
+    }
+  }
+  return displayText;
+}
+
+bool KeyboardEntryActivity::cursorPositionFromPoint(const int x, const int y, size_t& position) const {
+  const int pageWidth = renderer.getScreenWidth();
+  const auto& metrics = UITheme::getInstance().getMetrics();
+
+  const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int inputStartY = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing +
+                          metrics.verticalSpacing * 4 + metrics.keyboardVerticalOffset;
+
+  int availableWidth = pageWidth;
+  if (gpio.deviceIsX3()) {
+    availableWidth -= 2 * metrics.sideButtonHintsWidth;
+  }
+  const int effectiveMargin = (pageWidth - availableWidth * metrics.keyboardTextFieldWidthPercent / 100) / 2;
+  const int toggleGap = inputType == InputType::Password ? 4 : 0;
+  const int toggleReserve = inputType == InputType::Password ? std::max(renderer.getTextWidth(UI_12_FONT_ID, "[abc]"),
+                                                                        renderer.getTextWidth(UI_12_FONT_ID, "[***]")) +
+                                                                   toggleGap
+                                                             : 0;
+  const int textAreaWidth = pageWidth - 2 * effectiveMargin - toggleReserve;
+  const int maxLineWidth = textAreaWidth;
+  const bool centerText = metrics.keyboardCenteredText;
+  const std::string displayText = displayTextForCurrentState();
+
+  int lineStartIdx = 0;
+  int lineEndIdx = static_cast<int>(displayText.length());
+  int lineY = inputStartY;
+  int lastLineStartIdx = 0;
+  int lastLineEndIdx = lineEndIdx;
+  int lastLineStartX = effectiveMargin;
+  int lastLineWidth = 0;
+
+  while (true) {
+    std::string lineText = displayText.substr(lineStartIdx, lineEndIdx - lineStartIdx);
+    const int textWidth = renderer.getTextAdvanceX(UI_12_FONT_ID, lineText.c_str(), EpdFontFamily::REGULAR);
+    if (textWidth <= maxLineWidth) {
+      const int lineStartX = centerText ? effectiveMargin + (maxLineWidth - textWidth) / 2 : effectiveMargin;
+      lastLineStartIdx = lineStartIdx;
+      lastLineEndIdx = lineEndIdx;
+      lastLineStartX = lineStartX;
+      lastLineWidth = textWidth;
+
+      if (y >= lineY - metrics.verticalSpacing && y < lineY + lineHeight + metrics.verticalSpacing) {
+        if (x <= lineStartX) {
+          position = static_cast<size_t>(lineStartIdx);
+          return true;
+        }
+        if (x >= lineStartX + textWidth) {
+          position = static_cast<size_t>(lineEndIdx);
+          return true;
+        }
+
+        int previousWidth = 0;
+        for (int i = lineStartIdx; i < lineEndIdx; i++) {
+          const std::string throughChar = displayText.substr(lineStartIdx, i - lineStartIdx + 1);
+          const int nextWidth = renderer.getTextAdvanceX(UI_12_FONT_ID, throughChar.c_str(), EpdFontFamily::REGULAR);
+          const int midpoint = lineStartX + previousWidth + (nextWidth - previousWidth) / 2;
+          if (x < midpoint) {
+            position = static_cast<size_t>(i);
+            return true;
+          }
+          previousWidth = nextWidth;
+        }
+        position = static_cast<size_t>(lineEndIdx);
+        return true;
+      }
+
+      if (lineEndIdx == static_cast<int>(displayText.length())) {
+        break;
+      }
+
+      lineY += lineHeight;
+      lineStartIdx = lineEndIdx;
+      lineEndIdx = static_cast<int>(displayText.length());
+    } else {
+      lineEndIdx -= 1;
+    }
+  }
+
+  const int underlineBottom = lineY + lineHeight + metrics.verticalSpacing + 8;
+  if (y >= inputStartY - metrics.verticalSpacing && y < underlineBottom && x >= effectiveMargin &&
+      x < effectiveMargin + maxLineWidth + toggleReserve) {
+    position = x < lastLineStartX + lastLineWidth ? static_cast<size_t>(lastLineStartIdx)
+                                                  : static_cast<size_t>(lastLineEndIdx);
+    return true;
+  }
+
+  return false;
+}
+
 bool KeyboardEntryActivity::handleLongPressOnSelectedKey() {
   if (isBottomRow(selectedRow) && selectedCol == static_cast<int>(SpecialKeyType::Del)) {
     text.clear();
@@ -287,6 +396,20 @@ void KeyboardEntryActivity::loop() {
   int ty = 0;
   int touchedRow = -1;
   int touchedCol = -1;
+  size_t touchedCursorPos = 0;
+  if (mappedInput.wasScreenTapped(tx, ty) && cursorPositionFromPoint(tx, ty, touchedCursorPos)) {
+    cursorPos = std::min(touchedCursorPos, text.length());
+    cursorMode = false;
+    togglePos = false;
+    hintVisible = false;
+    touchKeyHeld = false;
+    touchKeyLongHandled = false;
+    touchKeyStart = 0;
+    touchKeyRow = -1;
+    touchKeyCol = -1;
+    requestUpdate();
+    return;
+  }
   if (!cursorMode && mappedInput.wasScreenTouchDown(tx, ty) && keyFromPoint(tx, ty, touchedRow, touchedCol)) {
     if (!touchKeyHeld || touchKeyRow != touchedRow || touchKeyCol != touchedCol) {
       touchKeyHeld = true;
@@ -512,23 +635,7 @@ void KeyboardEntryActivity::render(RenderLock&&) {
                           metrics.verticalSpacing * 4 + metrics.keyboardVerticalOffset;
   int inputHeight = 0;
 
-  std::string displayText;
-  if (inputType == InputType::Password && !passwordVisible) {
-    size_t revealPos;
-    if (cursorMode) {
-      revealPos = text.length();  // no reveal in displayText; block draws actual char directly
-    } else {
-      revealPos = (text.length() > 0 && cursorPos > 0) ? cursorPos - 1 : std::string::npos;
-    }
-    displayText = text;
-    for (size_t i = 0; i < displayText.length(); i++) {
-      if (i != revealPos) {
-        displayText[i] = '*';
-      }
-    }
-  } else {
-    displayText = text;
-  }
+  std::string displayText = displayTextForCurrentState();
 
   const bool isPassword = (inputType == InputType::Password);
   int availableWidth = pageWidth;
