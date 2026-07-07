@@ -67,6 +67,9 @@ void ActivityManager::renderTaskLoop() {
 void ActivityManager::loop() {
   if (currentActivity) {
     if (currentActivity->name != "Home" && mappedInput.wasHomeGesture()) {
+      if (currentActivity->handleHomeGesture()) {
+        return;
+      }
       goHome();
       return;
     }

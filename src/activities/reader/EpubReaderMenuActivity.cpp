@@ -49,15 +49,24 @@ void EpubReaderMenuActivity::onEnter() {
 
 void EpubReaderMenuActivity::onExit() { Activity::onExit(); }
 
+void EpubReaderMenuActivity::closeCancelled() {
+  ActivityResult result;
+  result.isCancelled = true;
+  result.data = MenuResult{-1, pendingOrientation, selectedPageTurnOption};
+  setResult(std::move(result));
+  finish();
+}
+
+bool EpubReaderMenuActivity::handleHomeGesture() {
+  closeCancelled();
+  return true;
+}
+
 void EpubReaderMenuActivity::loop() {
   if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    ActivityResult result;
-    result.isCancelled = true;
-    result.data = MenuResult{-1, pendingOrientation, selectedPageTurnOption};
-    setResult(std::move(result));
-    finish();
+    closeCancelled();
     return;
   }
 

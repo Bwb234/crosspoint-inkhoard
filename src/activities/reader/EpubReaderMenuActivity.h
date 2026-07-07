@@ -35,6 +35,7 @@ class EpubReaderMenuActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool handleHomeGesture() override;
 
  private:
   struct MenuItem {
@@ -43,6 +44,7 @@ class EpubReaderMenuActivity final : public Activity {
   };
 
   static std::vector<MenuItem> buildMenuItems(bool hasFootnotes, bool hasBookmarks);
+  void closeCancelled();
 
   // Fixed menu layout
   const std::vector<MenuItem> menuItems;
