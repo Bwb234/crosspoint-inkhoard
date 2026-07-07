@@ -86,10 +86,10 @@ inline TouchPageTurn detectTouchPageTurn(GfxRenderer& renderer, const MappedInpu
 
   const int16_t width = static_cast<int16_t>(renderer.getScreenWidth());
   const int16_t height = static_cast<int16_t>(renderer.getScreenHeight());
-  const int16_t third = width / 3;
+  const int16_t previousZoneWidth = width / 3;
   const freeink::ui::TapZone zones[] = {
-      {freeink::ui::Rect{0, 0, third, height}, READER_TOUCH_PREV},
-      {freeink::ui::Rect{static_cast<int16_t>(third * 2), 0, static_cast<int16_t>(width - third * 2), height},
+      {freeink::ui::Rect{0, 0, previousZoneWidth, height}, READER_TOUCH_PREV},
+      {freeink::ui::Rect{previousZoneWidth, 0, static_cast<int16_t>(width - previousZoneWidth), height},
        READER_TOUCH_NEXT},
   };
 
