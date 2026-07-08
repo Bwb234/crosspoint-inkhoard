@@ -4,7 +4,7 @@
 #include <Print.h>
 #include <Utf8.h>
 #include <XmlParserUtils.h>
-#include <expat.h>
+#include <epub/Expat.h>  // FreeInkBook's vendored expat
 
 #include <algorithm>
 #include <cmath>

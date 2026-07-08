@@ -1,7 +1,7 @@
 #pragma once
 
 #include <HalStorage.h>
-#include <expat.h>
+#include <epub/Expat.h>  // FreeInkBook's vendored expat
 
 #include <climits>
 #include <functional>

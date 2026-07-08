@@ -1,6 +1,6 @@
 #pragma once
 #include <Print.h>
-#include <expat.h>
+#include <epub/Expat.h>  // FreeInkBook's vendored expat
 
 #include <string>
 

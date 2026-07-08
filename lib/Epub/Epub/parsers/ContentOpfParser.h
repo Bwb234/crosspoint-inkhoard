@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "Epub.h"
-#include "expat.h"
+#include <epub/Expat.h>  // FreeInkBook's vendored expat
 
 class BookMetadataCache;
 

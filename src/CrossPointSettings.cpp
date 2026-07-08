@@ -351,10 +351,12 @@ int CrossPointSettings::getRefreshFrequency() const {
   }
 }
 
-int CrossPointSettings::getReaderFontId() const {
+int CrossPointSettings::getReaderFontId() const { return getReaderFontId(fontSize); }
+
+int CrossPointSettings::getReaderFontId(const uint8_t sizeIndex) const {
   // Check SD card font first
   if (sdFontFamilyName[0] != '\0' && sdFontIdResolver) {
-    int id = sdFontIdResolver(sdFontResolverCtx, sdFontFamilyName, fontSize);
+    int id = sdFontIdResolver(sdFontResolverCtx, sdFontFamilyName, sizeIndex);
     if (id != 0) return id;
     // Fall through to built-in if SD font not found
   }
@@ -362,7 +364,7 @@ int CrossPointSettings::getReaderFontId() const {
   switch (fontFamily) {
     case NOTOSERIF:
     default:
-      switch (fontSize) {
+      switch (sizeIndex) {
         case SMALL:
           return NOTOSERIF_12_FONT_ID;
         case MEDIUM:
@@ -374,7 +376,7 @@ int CrossPointSettings::getReaderFontId() const {
           return NOTOSERIF_18_FONT_ID;
       }
     case NOTOSANS:
-      switch (fontSize) {
+      switch (sizeIndex) {
         case SMALL:
           return NOTOSANS_12_FONT_ID;
         case MEDIUM:

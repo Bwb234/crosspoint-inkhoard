@@ -12,6 +12,12 @@ class EpdFont {
 
   const EpdGlyph* getGlyph(uint32_t cp) const;
 
+  /// True when the font actually provides `cp` (interval table or on-demand
+  /// SD load) — unlike getGlyph(), never satisfied by the replacement glyph.
+  /// Used by layout shaping to decide whether a substitution (ligature,
+  /// Arabic presentation form) can really be drawn.
+  bool hasGlyph(uint32_t cp) const;
+
   /// Returns the kerning adjustment (4.4 fixed-point in pixels) between two codepoints.
   /// Returns 0 if no kerning data exists for the pair.
   int8_t getKerning(uint32_t leftCp, uint32_t rightCp) const;

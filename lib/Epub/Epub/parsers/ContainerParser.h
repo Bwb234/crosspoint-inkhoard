@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "expat.h"
+#include <epub/Expat.h>  // FreeInkBook's vendored expat
 
 class ContainerParser final : public Print {
   enum ParserState {

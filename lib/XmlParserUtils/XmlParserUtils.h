@@ -1,6 +1,6 @@
 #pragma once
 
-#include <expat.h>
+#include <epub/Expat.h>  // FreeInkBook's vendored expat
 
 // Safely tear down an expat parser: stop processing, clear callbacks, free, and null the pointer.
 inline void destroyXmlParser(XML_Parser& parser) {
