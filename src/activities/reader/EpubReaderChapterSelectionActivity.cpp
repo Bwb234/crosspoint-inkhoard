@@ -7,21 +7,16 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 
-int EpubReaderChapterSelectionActivity::getTotalItems() const { return epub->getTocItemsCount(); }
+int EpubReaderChapterSelectionActivity::getTotalItems() const { return static_cast<int>(paginator.tocCount()); }
 
 void EpubReaderChapterSelectionActivity::onEnter() {
   Activity::onEnter();
 
-  if (!epub) {
-    return;
-  }
-
-  selectorIndex = epub->getTocIndexForSpineIndex(currentSpineIndex);
+  selectorIndex = paginator.tocIndexForSpine(currentSpineIndex);
   if (selectorIndex == -1) {
     selectorIndex = 0;
   }
 
-  // Trigger first update
   requestUpdate();
 }
 
@@ -32,14 +27,14 @@ void EpubReaderChapterSelectionActivity::loop() {
   const int totalItems = getTotalItems();
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    const auto tocItem = epub->getTocItem(selectorIndex);
+    const auto tocItem = paginator.tocItem(selectorIndex);
     if (tocItem.spineIndex == -1) {
       ActivityResult result;
       result.isCancelled = true;
       setResult(std::move(result));
       finish();
     } else {
-      setResult(ChapterResult{tocItem.spineIndex, tocItem.anchor});
+      setResult(ChapterResult{tocItem.spineIndex, tocItem.fragment != nullptr ? tocItem.fragment : ""});
       finish();
     }
   } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
@@ -85,8 +80,8 @@ void EpubReaderChapterSelectionActivity::render(RenderLock&&) {
   const int totalItems = getTotalItems();
   GUI.drawList(renderer, Rect{screen.x, contentTop, screen.width, contentHeight}, totalItems, selectorIndex,
                [this](int index) {
-                 auto item = epub->getTocItem(index);
-                 std::string indent((item.level - 1) * 2, ' ');
+                 const auto item = paginator.tocItem(index);
+                 std::string indent(static_cast<size_t>(item.depth) * 2, ' ');
                  return indent + item.title;
                });
 

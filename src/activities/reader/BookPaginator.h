@@ -47,15 +47,38 @@ class BookPaginator {
 
   // Opens the container and builds the font chain. `cacheDir` is the
   // per-book directory (".crosspoint/epub_<hash>"). Plain-text files open
-  // as a one-chapter book with no container.
-  bool open(const std::string& path, const std::string& cacheDir, GfxRenderer& renderer);
+  // as a one-chapter book with no container — detected by .txt extension, or
+  // forced via `forcePlainText` (markdown files read as plain text).
+  bool open(const std::string& path, const std::string& cacheDir, GfxRenderer& renderer, bool forcePlainText = false);
   void close();
   bool isOpen() const { return open_; }
   bool isTxt() const { return isTxt_; }
 
   freeink::book::Book& book() { return book_; }
+  freeink::book::BookSource* bookSource() { return &source_; }
   size_t spineCount() const { return isTxt_ ? 1 : book_.spineCount(); }
   const char* language() const;
+  const char* title() const { return isTxt_ ? "" : book_.metadata().title; }
+  const char* author() const { return isTxt_ ? "" : book_.metadata().author; }
+
+  // --- TOC (flattened, resolved to spine indices) --------------------------
+  struct TocItem {
+    const char* title;
+    const char* fragment;  // anchor within the chapter, or nullptr
+    int spineIndex;        // -1 when the href is not a spine item
+    uint8_t depth;
+  };
+  size_t tocCount() const { return isTxt_ ? 0 : book_.tocCount(); }
+  TocItem tocItem(size_t index) const;
+  // First TOC entry pointing at `spineIndex` or an earlier chapter (the
+  // chapter's display title); -1 when the TOC has no such entry.
+  int tocIndexForSpine(int spineIndex) const;
+
+  // --- whole-book progress (uncompressed spine byte weights) ---------------
+  // Fraction of the book at (spine, fraction-within-chapter), 0..1.
+  float bookProgress(int spineIndex, float chapterFraction) const;
+  // Inverse: which spine (and where inside it) a whole-book fraction lands.
+  int spineForBookFraction(float bookFraction, float* chapterFractionOut) const;
 
   // Refreshes LayoutParams from SETTINGS and the given content box. Must be
   // called before ensureChapter() and after any settings/orientation change;

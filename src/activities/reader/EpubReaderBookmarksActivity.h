@@ -1,14 +1,11 @@
 #pragma once
-#include <Epub.h>
-
-#include <memory>
-
 #include "../../BookmarkEntry.h"
 #include "../Activity.h"
+#include "BookPaginator.h"
 #include "util/ButtonNavigator.h"
 
 class EpubReaderBookmarksActivity final : public Activity {
-  std::shared_ptr<Epub> epub;
+  BookPaginator& paginator;
   std::string epubPath;
   ButtonNavigator buttonNavigator;
   int selectorIndex = 0;
@@ -16,9 +13,9 @@ class EpubReaderBookmarksActivity final : public Activity {
   int confirmingDelete = 0;  // 0 = hide dialog, 1 = show dialog, 2 = allow confirmation to delete
 
  public:
-  explicit EpubReaderBookmarksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                       const std::shared_ptr<Epub>& epub, const std::string& epubPath)
-      : Activity("EpubReaderBookmarks", renderer, mappedInput), epub(epub), epubPath(epubPath) {}
+  explicit EpubReaderBookmarksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, BookPaginator& paginator,
+                                       const std::string& epubPath)
+      : Activity("EpubReaderBookmarks", renderer, mappedInput), paginator(paginator), epubPath(epubPath) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;

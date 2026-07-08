@@ -47,6 +47,9 @@ struct ProgressChangeResult {
   std::string xpath;
   float percentage = 0.0f;
   bool hasSavedProgress = false;
+  // FreeInkBook locator (chapter character offset); exact when present.
+  uint32_t charStart = 0;
+  bool hasCharStart = false;
 };
 
 enum class NetworkMode;

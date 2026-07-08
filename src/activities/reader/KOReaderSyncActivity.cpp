@@ -70,7 +70,17 @@ void KOReaderSyncActivity::saveProgressAndReturn(int spineIndex, int page) {
   // epub is guaranteed non-null here: ensureEpubLoaded() was called in performSync() before
   // SHOWING_RESULT state is entered, and this method is only called from that state.
   assert(epub);
-  if (!EpubReaderUtils::saveProgress(*epub, spineIndex, page, 0)) {
+  // The reader restores positions by chapter character offset; the remote
+  // position arrives as an estimated (page, totalPages), so persist it as a
+  // chapter fraction that resolves against totalChars() once the chapter's
+  // page cache opens.
+  const int totalPages = remotePosition.totalPages;
+  const uint32_t fractionQ16 =
+      (totalPages > 0 && page > 0 && page <= totalPages)
+          ? (static_cast<uint32_t>(page) << 16) / static_cast<uint32_t>(totalPages)
+          : 0;
+  if (!EpubReaderUtils::saveProgress(epub->getCachePath(), static_cast<uint16_t>(spineIndex),
+                                     EpubReaderUtils::kNoCharStart, fractionQ16)) {
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;

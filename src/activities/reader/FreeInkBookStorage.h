@@ -73,13 +73,11 @@ class SdCacheStorage : public freeink::book::CacheStorage {
     return true;
   }
 
-  bool write(const void* data, uint32_t len) override {
-    return write_.isOpen() && write_.write(data, len) == len;
-  }
+  bool write(const void* data, uint32_t len) override { return write_.isOpen() && write_.write(data, len) == len; }
 
   bool endWrite() override {
     if (!write_.isOpen()) return false;
-    write_.close();  // must close before rename (DESTRUCTOR_CLOSES_FILE covers scope exit only)
+    write_.close();               // must close before rename (DESTRUCTOR_CLOSES_FILE covers scope exit only)
     Storage.remove(commitPath_);  // may not exist; rename below is the commit point
     if (!Storage.rename(path(kTempName), commitPath_)) {
       LOG_ERR("FIBCACHE", "commit rename failed: %s", commitPath_);

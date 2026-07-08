@@ -8,7 +8,10 @@ namespace BidiUtils {
 // AUTO: scan text for first strong directional character (P2/P3 rules)
 // LTR:  force left-to-right paragraph embedding level
 // RTL:  force right-to-left paragraph embedding level
-enum class BidiBaseDir : signed char { AUTO = -1, LTR = 0, RTL = 1 };
+// NONE: text is already in visual order (e.g. FreeInkBook page runs, which
+//       bake UAX#9 reordering and Arabic shaping in at layout time) — draw
+//       byte-for-byte, never reorder
+enum class BidiBaseDir : signed char { NONE = -2, AUTO = -1, LTR = 0, RTL = 1 };
 }  // namespace BidiUtils
 
 class FontCacheManager;

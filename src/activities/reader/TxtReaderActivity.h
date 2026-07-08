@@ -1,49 +1,36 @@
 #pragma once
 
-#include <Txt.h>
+#include <optional>
+#include <string>
 
-#include <vector>
-
-#include "CrossPointSettings.h"
+#include "BookPaginator.h"
 #include "activities/Activity.h"
 
+// Plain-text (.txt / .md) reading UI over the FreeInkBook engine: the file is
+// one chapter driven through ChapterLayout::layoutPlainText, so justification,
+// hyphenation, page caching, and character-offset progress all work exactly
+// as they do for EPUBs.
 class TxtReaderActivity final : public Activity {
-  std::unique_ptr<Txt> txt;
+  std::string path_;
+  std::string cacheDir_;
+  BookPaginator paginator;
 
-  int currentPage = 0;
-  int totalPages = 1;
+  uint32_t currentPage = 0;
+  uint32_t lastCharStart = 0;
+  uint32_t openGeneration = 0;
+  bool chapterOpen = false;
+  bool buildPopupShown = false;
+  std::optional<uint32_t> pendingCharStart;
   int pagesUntilFullRefresh = 0;
 
-  // Streaming text reader - stores file offsets for each page
-  std::vector<size_t> pageOffsets;  // File offset for start of each page
-  std::vector<std::string> currentPageLines;
-  int linesPerPage = 0;
-  int viewportWidth = 0;
-  bool initialized = false;
-
-  // Cached settings for cache validation (different fonts/margins require re-indexing)
-  int cachedFontId = 0;
-  uint8_t cachedScreenMargin = 0;
-  uint8_t cachedParagraphAlignment = CrossPointSettings::LEFT_ALIGN;
-  int cachedOrientedMarginTop = 0;
-  int cachedOrientedMarginRight = 0;
-  int cachedOrientedMarginBottom = 0;
-  int cachedOrientedMarginLeft = 0;
-
-  void renderPage();
+  bool ensureChapterAndPosition();
+  void renderPage(const freeink::book::Page& page);
   void renderStatusBar() const;
-
-  void initializeReader();
-  bool loadPageAtOffset(size_t offset, std::vector<std::string>& outLines, size_t& nextOffset);
-  void buildPageIndex();
-  bool loadPageIndexCache();
-  void savePageIndexCache() const;
-  void saveProgress() const;
-  void loadProgress();
+  std::string title() const;
 
  public:
-  explicit TxtReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Txt> txt)
-      : Activity("TxtReader", renderer, mappedInput), txt(std::move(txt)) {}
+  explicit TxtReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path)
+      : Activity("TxtReader", renderer, mappedInput), path_(std::move(path)) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;

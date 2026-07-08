@@ -51,8 +51,7 @@ int16_t CpFontAdapter::ascent(const uint16_t sizePx) {
   return family != nullptr ? static_cast<int16_t>(family->getData(style_)->ascender) : 0;
 }
 
-int16_t CpFontAdapter::kerning(const uint32_t left, const uint32_t right, const uint16_t sizePx,
-                               uint8_t) {
+int16_t CpFontAdapter::kerning(const uint32_t left, const uint32_t right, const uint16_t sizePx, uint8_t) {
   if (utf8IsCombiningMark(left) || utf8IsCombiningMark(right)) return 0;
   const EpdFontFamily* family = familyFor(sizePx);
   if (family == nullptr) return 0;

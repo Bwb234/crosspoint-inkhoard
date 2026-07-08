@@ -424,6 +424,7 @@ bool JsonSettingsIO::saveBookmarks(const std::vector<BookmarkEntry>& bookmarks, 
     obj["si"] = bookmark.computedSpineIndex;
     obj["pc"] = bookmark.computedChapterPageCount;
     obj["pp"] = bookmark.computedChapterProgress;
+    if (bookmark.hasCharStart) obj["cs"] = bookmark.charStart;
   }
 
   String json;
@@ -451,6 +452,8 @@ bool JsonSettingsIO::loadBookmarks(std::vector<BookmarkEntry>& bookmarks, const 
     bookmark.computedSpineIndex = obj["si"] | static_cast<uint16_t>(0);
     bookmark.computedChapterPageCount = obj["pc"] | static_cast<uint16_t>(0);
     bookmark.computedChapterProgress = obj["pp"] | static_cast<uint16_t>(0);
+    bookmark.hasCharStart = !obj["cs"].isNull();
+    bookmark.charStart = obj["cs"] | static_cast<uint32_t>(0);
   }
 
   LOG_DBG("BKM", "Loaded %zu bookmarks from file", bookmarks.size());

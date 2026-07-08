@@ -25,10 +25,6 @@ constexpr int LINE_HEIGHT = 60;
 void EpubReaderBookmarksActivity::onEnter() {
   Activity::onEnter();
 
-  if (!epub) {
-    return;
-  }
-
   const std::string path = BookmarkUtil::getBookmarkPath(epubPath);
   if (Storage.exists(path.c_str())) {
     String json = Storage.readFile(path.c_str());
@@ -111,8 +107,14 @@ void EpubReaderBookmarksActivity::loop() {
     result.xpath = bookmark.xpath;
     result.percentage = bookmark.percentage;
     result.hasSavedProgress = true;
-    if (bookmark.computedChapterPageCount > 0 && bookmark.computedChapterProgress < bookmark.computedChapterPageCount &&
-        bookmark.computedSpineIndex < epub->getSpineItemsCount()) {
+    if (bookmark.hasCharStart && bookmark.computedSpineIndex < paginator.spineCount()) {
+      // FreeInkBook locator: exact landing at any layout settings.
+      result.spineIndex = bookmark.computedSpineIndex;
+      result.charStart = bookmark.charStart;
+      result.hasCharStart = true;
+    } else if (bookmark.computedChapterPageCount > 0 &&
+               bookmark.computedChapterProgress < bookmark.computedChapterPageCount &&
+               bookmark.computedSpineIndex < paginator.spineCount()) {
       result.spineIndex = bookmark.computedSpineIndex;
       result.page = bookmark.computedChapterProgress;
       result.totalPages = bookmark.computedChapterPageCount;
@@ -192,8 +194,8 @@ void EpubReaderBookmarksActivity::render(RenderLock&&) {
   };
   const auto getBookmarkSubtitle = [this](int index) {
     auto bookmark = bookmarks.at(confirmingDelete >= DELETE_MODE_DISPLAY ? selectorIndex : index);
-    auto tocIndex = epub->getTocIndexForSpineIndex(bookmark.computedSpineIndex);
-    auto tocTitle = (tocIndex >= 0) ? (epub->getTocItem(tocIndex)).title : tr(STR_UNNAMED);
+    const int tocIndex = paginator.tocIndexForSpine(bookmark.computedSpineIndex);
+    const std::string tocTitle = (tocIndex >= 0) ? paginator.tocItem(tocIndex).title : tr(STR_UNNAMED);
     std::string subtitle = std::to_string((int)(std::clamp(bookmark.percentage, 0.0f, 1.0f) * 100.0f + 0.5f)) + "% - ";
     if (bookmark.computedChapterPageCount > 0) {
       subtitle += std::to_string(bookmark.computedChapterProgress + 1) + "/" +

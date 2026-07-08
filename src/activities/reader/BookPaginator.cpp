@@ -53,7 +53,8 @@ class ProgressSink : public freeink::book::PageSink {
 
 }  // namespace
 
-bool BookPaginator::open(const std::string& path, const std::string& cacheDir, GfxRenderer& renderer) {
+bool BookPaginator::open(const std::string& path, const std::string& cacheDir, GfxRenderer& renderer,
+                         const bool forcePlainText) {
   close();
 
   bookBuf_ = makeUniqueNoThrow<uint8_t[]>(kBookArenaSize);
@@ -78,7 +79,7 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
   }
 
   const size_t len = path.size();
-  isTxt_ = len > 4 && strcasecmp(path.c_str() + len - 4, ".txt") == 0;
+  isTxt_ = forcePlainText || (len > 4 && strcasecmp(path.c_str() + len - 4, ".txt") == 0);
 
   if (!isTxt_) {
     // Container open + book stylesheet need parse scratch; both are
@@ -269,9 +270,7 @@ uint32_t BookPaginator::fontFingerprint() const {
   return hash;
 }
 
-uint32_t BookPaginator::generation() const {
-  return freeink::book::layoutGenerationHash(params_, fontFingerprint());
-}
+uint32_t BookPaginator::generation() const { return freeink::book::layoutGenerationHash(params_, fontFingerprint()); }
 
 freeink::book::BookStatus BookPaginator::ensureChapter(const uint16_t spineIndex, const BuildProgress& progress) {
   const uint32_t gen = generation();
@@ -346,6 +345,84 @@ int BookPaginator::spineIndexForHref(const char* href) const {
     if (item != nullptr && strcmp(item->href, href) == 0) return static_cast<int>(s);
   }
   return -1;
+}
+
+BookPaginator::TocItem BookPaginator::tocItem(const size_t index) const {
+  TocItem out{"", nullptr, -1, 0};
+  const freeink::book::TocEntry* entry = isTxt_ ? nullptr : book_.tocEntry(index);
+  if (entry == nullptr) return out;
+  out.title = entry->title;
+  out.fragment = entry->fragment;
+  out.depth = entry->depth;
+  out.spineIndex = spineIndexForHref(entry->href);
+  return out;
+}
+
+int BookPaginator::tocIndexForSpine(const int spineIndex) const {
+  // The chapter's title is the last TOC entry at or before this spine item
+  // (a spine item without its own entry belongs to the preceding heading).
+  int best = -1;
+  int bestSpine = -1;
+  for (size_t t = 0; t < tocCount(); ++t) {
+    const int s = tocItem(t).spineIndex;
+    if (s < 0 || s > spineIndex) continue;
+    if (s >= bestSpine) {
+      bestSpine = s;
+      best = static_cast<int>(t);
+    }
+  }
+  return best;
+}
+
+// Spine weights use the uncompressed sizes already in the ZIP catalog — the
+// same "bigger chapters cover more of the book" heuristic the legacy engine
+// used, with zero extra state.
+float BookPaginator::bookProgress(const int spineIndex, const float chapterFraction) const {
+  if (isTxt_) return chapterFraction;
+  uint64_t before = 0;
+  uint64_t current = 0;
+  uint64_t total = 0;
+  for (size_t s = 0; s < book_.spineCount(); ++s) {
+    const ManifestItem* item = book_.spineItem(s);
+    const freeink::book::ZipEntry* e = item != nullptr ? book_.zip().find(item->href) : nullptr;
+    const uint32_t size = e != nullptr ? e->uncompressedSize : 0;
+    if (static_cast<int>(s) < spineIndex) before += size;
+    if (static_cast<int>(s) == spineIndex) current = size;
+    total += size;
+  }
+  if (total == 0) return 0.0f;
+  const float f = chapterFraction < 0.0f ? 0.0f : (chapterFraction > 1.0f ? 1.0f : chapterFraction);
+  return (static_cast<float>(before) + f * static_cast<float>(current)) / static_cast<float>(total);
+}
+
+int BookPaginator::spineForBookFraction(const float bookFraction, float* chapterFractionOut) const {
+  if (chapterFractionOut != nullptr) *chapterFractionOut = 0.0f;
+  if (isTxt_ || book_.spineCount() == 0) {
+    if (chapterFractionOut != nullptr) *chapterFractionOut = bookFraction;
+    return 0;
+  }
+  uint64_t total = 0;
+  for (size_t s = 0; s < book_.spineCount(); ++s) {
+    const ManifestItem* item = book_.spineItem(s);
+    const freeink::book::ZipEntry* e = item != nullptr ? book_.zip().find(item->href) : nullptr;
+    total += e != nullptr ? e->uncompressedSize : 0;
+  }
+  const float f = bookFraction < 0.0f ? 0.0f : (bookFraction > 1.0f ? 1.0f : bookFraction);
+  const uint64_t target = static_cast<uint64_t>(f * static_cast<float>(total));
+  uint64_t cumulative = 0;
+  for (size_t s = 0; s < book_.spineCount(); ++s) {
+    const ManifestItem* item = book_.spineItem(s);
+    const freeink::book::ZipEntry* e = item != nullptr ? book_.zip().find(item->href) : nullptr;
+    const uint32_t size = e != nullptr ? e->uncompressedSize : 0;
+    if (target < cumulative + size || s + 1 == book_.spineCount()) {
+      if (chapterFractionOut != nullptr && size > 0) {
+        *chapterFractionOut = static_cast<float>(target - cumulative) / static_cast<float>(size);
+      }
+      return static_cast<int>(s);
+    }
+    cumulative += size;
+  }
+  return 0;
 }
 
 int BookPaginator::fontIdForRunSize(const uint16_t sizePx) const {
