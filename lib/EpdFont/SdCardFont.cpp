@@ -1061,6 +1061,28 @@ void SdCardFont::mergeIntoAdvanceTable(uint8_t styleIdx, const AdvanceEntry* sor
   advanceTableSize_[styleIdx] = k;
 }
 
+bool SdCardFont::hasGlyphMeta(uint8_t styleIdx, uint32_t codepoint) const {
+  styleIdx &= (MAX_STYLES - 1);
+  const PerStyle& s = styles_[styleIdx];
+  if (!loaded_ || !s.present) return false;
+  return findGlobalGlyphIndex(s, codepoint) >= 0;
+}
+
+uint16_t SdCardFont::ensureAdvance(uint8_t styleIdx, uint32_t codepoint) {
+  styleIdx &= (MAX_STYLES - 1);
+  if (!loaded_ || !styles_[styleIdx].present) return 0;
+  const uint16_t cached = getAdvance(codepoint, styleIdx);
+  if (cached != 0) return cached;
+  // 0 is either "not in table" or a genuine zero-width glyph; only pay the
+  // SD read when the resident interval table says the glyph exists.
+  if (findGlobalGlyphIndex(styles_[styleIdx], codepoint) < 0) return 0;
+  uint32_t cp = codepoint;
+  fetchAdvancesForCodepoints(&cp, 1, static_cast<uint8_t>(1u << styleIdx));
+  return getAdvance(codepoint, styleIdx);
+}
+
+uint8_t SdCardFont::styleIdxFromMissCtx(void* ctx) { return static_cast<OverflowContext*>(ctx)->styleIdx; }
+
 bool SdCardFont::hasAdvanceTable() const {
   for (uint8_t i = 0; i < MAX_STYLES; i++) {
     if (advanceTable_[i]) return true;

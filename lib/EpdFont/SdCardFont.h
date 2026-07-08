@@ -55,6 +55,23 @@ class SdCardFont {
   // Returns the 12.4 fixed-point advance, or 0 if not found.
   uint16_t getAdvance(uint32_t codepoint, uint8_t style) const;
 
+  // Layout-side metric access — the per-glyph path CpFontAdapter uses while
+  // the FreeInkBook engine measures a chapter. Neither touches bitmap data:
+  // going through getGlyph() would stream every occurrence's bitmap through
+  // the 8-slot overflow ring (one SD read per character — a crawling build).
+  //
+  // hasGlyphMeta answers existence from the resident interval table (no I/O).
+  bool hasGlyphMeta(uint8_t styleIdx, uint32_t codepoint) const;
+  // ensureAdvance returns the 12.4 fixed-point advanceX, fetching the glyph
+  // METADATA from SD once on a miss and merging it into the persistent
+  // advance table (so each unique codepoint costs one small read per
+  // session). Returns 0 when the style lacks the codepoint.
+  uint16_t ensureAdvance(uint8_t styleIdx, uint32_t codepoint);
+
+  // Recover the style index from an EpdFontData::glyphMissCtx (see
+  // fromMissCtx below for recovering the SdCardFont itself).
+  static uint8_t styleIdxFromMissCtx(void* ctx);
+
   // Returns true if advance table is populated for at least one style.
   bool hasAdvanceTable() const;
 

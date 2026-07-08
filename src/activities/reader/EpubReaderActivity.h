@@ -1,6 +1,4 @@
 #pragma once
-#include "FootnoteEntry.h"
-
 #include <optional>
 #include <string>
 #include <vector>
@@ -9,6 +7,7 @@
 #include "BookmarkEntry.h"
 #include "EndOfBookOptions.h"
 #include "EpubReaderMenuActivity.h"
+#include "FootnoteEntry.h"
 #include "activities/Activity.h"
 
 // EPUB reading UI over the FreeInkBook engine (BookPaginator). Position is
@@ -48,6 +47,7 @@ class EpubReaderActivity final : public Activity {
   bool currentPageBookmarked = false;
   bool bookmarkRemoved = false;  // true when last toggle removed (controls popup text)
   bool buildPopupShown = false;  // indexing popup drawn for the current build
+  bool bookmarksLoaded = false;  // deferred until after the first page render
   std::vector<BookmarkEntry> cachedBookmarks;
   bool recentsEntryRemoved = false;
   unsigned long bookmarkMessageTime = 0UL;

@@ -2,6 +2,7 @@
 
 #include <BookXPath.h>
 #include <FontCacheManager.h>
+#include <FontDecompressor.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -132,6 +133,11 @@ void EpubReaderActivity::onEnter() {
   cacheDir_ = cacheDirForBook(path_);
   Storage.ensureDirectoryExists("/.crosspoint");
 
+  // Container open takes ~2 s (two parse passes on the C3); without feedback
+  // the stale previous screen just freezes.
+  GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
+  pagesUntilFullRefresh = 1;  // HALF-clear the popup under the first page
+
   if (!paginator.open(path_, cacheDir_, renderer)) {
     LOG_ERR("ERS", "Failed to open book: %s", path_.c_str());
     activityManager.goToFullScreenMessage(tr(STR_PAGE_LOAD_ERROR), EpdFontFamily::BOLD);
@@ -157,7 +163,9 @@ void EpubReaderActivity::onEnter() {
   }
   RECENT_BOOKS.addBook(path_, title, paginator.author(), cacheDir_ + "/thumb_[HEIGHT].bmp");
 
-  loadCachedBookmarks();
+  // Bookmarks load lazily after the first page renders (see render()): the
+  // JSON text + parsed vector would otherwise sit on the heap through the
+  // first chapter build, which is the tightest allocation window we have.
   requestUpdate();
 }
 
@@ -648,11 +656,34 @@ bool EpubReaderActivity::ensureChapterAndPosition() {
     chapterOpen = false;
     buildPopupShown = false;
 
+    // A missing cache means a multi-second pagination: show the popup BEFORE
+    // the build so the screen never sits frozen. The progress callback stays
+    // as the fallback for stale-cache rebuilds detected inside the engine.
+    if (!paginator.isChapterCached(static_cast<uint16_t>(currentSpineIndex))) {
+      GUI.drawPopup(renderer, tr(STR_INDEXING));
+      pagesUntilFullRefresh = 1;  // HALF-clear the popup under the first page
+      buildPopupShown = true;
+      // Deflated chapters need every heap byte for the build scratch; the
+      // glyph caches re-warm on the next page's prewarm pass anyway. Do NOT
+      // release the SD font tables here: layout calls advance() per glyph
+      // and without the resident mini data every lookup becomes an SD read
+      // through the 8-slot overflow cache (observed as a crawling build).
+      if (auto* fcm = renderer.getFontCacheManager()) {
+        if (auto* fdc = fcm->getDecompressor()) fdc->clearCache();
+      }
+      // Lend the framebuffer's 48 KB to the build arenas: the popup just
+      // displayed stays on the panel (e-ink is persistent), and render()
+      // fully redraws once the buffer is restored below.
+      renderer.releaseFrameBufferForBuild();
+    }
+
     BookPaginator::BuildProgress progressCb;
     progressCb.ctx = this;
     progressCb.fn = [](void* ctx, uint32_t) {
       auto* self = static_cast<EpubReaderActivity*>(ctx);
-      if (!self->buildPopupShown) {
+      // No framebuffer while it is lent to the build — skip popup drawing
+      // (the pre-build popup is already on the panel in that case).
+      if (!self->buildPopupShown && self->renderer.hasFrameBuffer()) {
         GUI.drawPopup(self->renderer, tr(STR_INDEXING));
         // HALF-clear the popup when the page replaces it, else it ghosts.
         self->pagesUntilFullRefresh = 1;
@@ -661,6 +692,13 @@ bool EpubReaderActivity::ensureChapterAndPosition() {
     };
 
     const auto status = paginator.ensureChapter(static_cast<uint16_t>(currentSpineIndex), progressCb);
+    if (!renderer.hasFrameBuffer() && !renderer.restoreFrameBufferAfterBuild()) {
+      // Unrecoverable: nothing can be drawn again. The build arenas are freed
+      // (ensureChapter released them), so this realloc failing means the heap
+      // is corrupt — restart rather than run blind.
+      LOG_ERR("ERS", "Framebuffer restore failed - restarting");
+      ESP.restart();
+    }
     if (status != freeink::book::BookStatus::Ok) {
       LOG_ERR("ERS", "ensureChapter(%d) failed: %d", currentSpineIndex, static_cast<int>(status));
       return false;
@@ -795,6 +833,9 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   lastCharStart = page.charStart;
   currentPageFootnotes = FreeInkPageRenderer::collectFootnotes(page);
+  if (!bookmarksLoaded) {
+    loadCachedBookmarks();  // deferred from onEnter — past the build's heap peak
+  }
   updateBookmarkFlag();
 
   const auto start = millis();
@@ -1003,6 +1044,7 @@ void EpubReaderActivity::restoreSavedPosition() {
 }
 
 void EpubReaderActivity::loadCachedBookmarks() {
+  bookmarksLoaded = true;
   cachedBookmarks.clear();
   if (cachedBookmarks.capacity() < initialBookmarkCacheCapacity) {
     cachedBookmarks.reserve(initialBookmarkCacheCapacity);

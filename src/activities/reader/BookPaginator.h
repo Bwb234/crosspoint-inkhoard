@@ -93,6 +93,11 @@ class BookPaginator {
   // Everything layout-relevant, hashed — the cache key.
   uint32_t generation() const;
 
+  // True when the chapter already has a page cache for the current
+  // generation — i.e. ensureChapter() will be a fast open, not a build.
+  // Callers use this to show the indexing popup before the heavy path.
+  bool isChapterCached(uint16_t spineIndex);
+
   // Opens the chapter's page cache for the current generation, laying the
   // chapter out first when missing or stale. Heavy only on that miss.
   freeink::book::BookStatus ensureChapter(uint16_t spineIndex, const BuildProgress& progress = BuildProgress());
@@ -131,10 +136,8 @@ class BookPaginator {
   // high-water). Deliberately snug: open needs scratch + the 48 KB temp book
   // arena simultaneously, and the C3's largest free block hovers just above
   // 112 KB — 64 KB here made the pair miss fitting by a few dozen bytes.
+  // (Chapter builds size their two arenas adaptively in ensureChapter.)
   static constexpr size_t kOpenScratchSize = 56 * 1024;
-  // Chapter pagination: layout buffers + inflate + writer index. The ideal
-  // size; ensureChapter steps down when fragmentation denies a block this big.
-  static constexpr size_t kBuildScratchSize = 120 * 1024;
 
   bool buildFontChain(GfxRenderer& renderer);
   bool reallocChapterArenas();

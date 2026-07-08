@@ -60,7 +60,10 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
   for (RecentBook& book : recentBooks) {
     if (!book.coverBmpPath.empty()) {
       std::string coverPath = UITheme::getCoverThumbPath(book.coverBmpPath, coverHeight);
-      if (!Storage.exists(coverPath.c_str())) {
+      // Missing OR a stale zero-byte sentinel (transient-failure leftover)
+      // both warrant an attempt; a real thumb or a decided-coverless marker
+      // (1 byte) short-circuits without opening the container.
+      if (BookCoverUtils::thumbAttemptNeeded(coverPath)) {
         // If epub, generate the Continue Reading thumbnail from its cover
         if (FsHelpers::hasEpubExtension(book.path)) {
           if (!showingLoading) {

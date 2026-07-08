@@ -22,10 +22,17 @@ std::string thumbBmpPathTemplate(const std::string& epubPath);
 // Screen-sized cover for the sleep screen. No-op when the file exists.
 bool generateCoverBmp(const std::string& epubPath, bool cropped);
 
-// 1-bit thumbnail for the home screen (fast BW blit). No-op when the file
-// exists. On failure or missing cover an empty sentinel file is written so
-// the generation is not retried every visit (legacy behavior).
+// 1-bit thumbnail for the home screen (fast BW blit). No-op when a real
+// thumbnail exists. A provably coverless book writes a 1-byte sentinel so it
+// is not re-probed every visit; a legacy/stale ZERO-byte sentinel (left by a
+// transient failure) is healed by retrying.
 bool generateThumbBmp(const std::string& epubPath, int height);
+
+// True when a generation attempt is warranted for the resolved thumb path:
+// the file is missing OR is a stale zero-byte sentinel. A 1-byte coverless
+// sentinel and any real BMP both return false. Callers gate the loading
+// popup (and the per-book container open) on this.
+bool thumbAttemptNeeded(const std::string& thumbPath);
 
 // Book title/author straight from the OPF (for recents entries).
 bool readMetadata(const std::string& epubPath, std::string* titleOut, std::string* authorOut);

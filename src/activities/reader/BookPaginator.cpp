@@ -8,6 +8,7 @@
 #include <esp_heap_caps.h>
 #include <text/hyph_en_us.h>
 
+#include <algorithm>
 #include <cstring>
 
 #include "CrossPointSettings.h"
@@ -76,38 +77,45 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
     // exactly-sized buffer. The stylesheet is likewise compacted down to its
     // real rule array. All open-time transients are freed before the
     // per-chapter arenas are allocated.
-    auto scratchBuf = makeUniqueNoThrow<uint8_t[]>(kOpenScratchSize);
-    auto tempBookBuf = makeUniqueNoThrow<uint8_t[]>(kBookArenaSize);
-    if (!scratchBuf || !tempBookBuf) {
-      LOG_ERR("FIB", "OOM: open working set (%u B, free heap %u)",
-              static_cast<unsigned>(kOpenScratchSize + kBookArenaSize), static_cast<unsigned>(ESP.getFreeHeap()));
-      close();
-      return false;
+    // PHASE A: parse into full-size temporaries to learn the real footprint,
+    // then free EVERYTHING. Persistents allocated into the emptied heap take
+    // the start of the big free region (or a pocket), leaving the tail
+    // contiguous — allocating them while transients are held, or keeping the
+    // temp arena, both proved to pin large blocks mid-heap and split the
+    // region the chapter builds need.
+    size_t bookUsed = 0;
+    {
+      auto scratchBuf = makeUniqueNoThrow<uint8_t[]>(kOpenScratchSize);
+      auto tempBookBuf = makeUniqueNoThrow<uint8_t[]>(kBookArenaSize);
+      if (!scratchBuf || !tempBookBuf) {
+        LOG_ERR("FIB", "OOM: open working set (%u B, free heap %u)",
+                static_cast<unsigned>(kOpenScratchSize + kBookArenaSize), static_cast<unsigned>(ESP.getFreeHeap()));
+        close();
+        return false;
+      }
+      Arena scratch(scratchBuf.get(), kOpenScratchSize);
+      Arena tempArena(tempBookBuf.get(), kBookArenaSize);
+      freeink::book::Book probeBook;
+      const BookStatus st = probeBook.open(source_, tempArena, scratch);
+      if (st != BookStatus::Ok) {
+        LOG_ERR("FIB", "Book open failed: %d (%s)", static_cast<int>(st), path.c_str());
+        close();
+        return false;
+      }
+      bookUsed = tempArena.used();
     }
-    Arena scratch(scratchBuf.get(), kOpenScratchSize);
-    bookArena_.init(tempBookBuf.get(), kBookArenaSize);
 
-    BookStatus st = book_.open(source_, bookArena_, scratch);
-    if (st != BookStatus::Ok) {
-      LOG_ERR("FIB", "Book open failed: %d (%s)", static_cast<int>(st), path.c_str());
-      close();
-      return false;
-    }
-
-    // Second pass into the exact footprint (+ slack for alignment). The
-    // temporary arena is freed FIRST — the reopen re-parses the container
-    // rather than copying, so peak in-flight stays at scratch + one arena.
-    const size_t bookUsed = bookArena_.used();
-    tempBookBuf.reset();
-    book_ = freeink::book::Book();
+    // PHASE B: exact-size arena into the emptied heap, re-parse for keeps.
     bookBuf_ = makeUniqueNoThrow<uint8_t[]>(bookUsed + 128);
-    if (!bookBuf_) {
+    auto scratchBuf = makeUniqueNoThrow<uint8_t[]>(kOpenScratchSize);
+    if (!bookBuf_ || !scratchBuf) {
       LOG_ERR("FIB", "OOM: book arena reopen (%u B)", static_cast<unsigned>(bookUsed + 128));
       close();
       return false;
     }
+    Arena scratch(scratchBuf.get(), kOpenScratchSize);
     bookArena_.init(bookBuf_.get(), bookUsed + 128);
-    st = book_.open(source_, bookArena_, scratch);
+    const BookStatus st = book_.open(source_, bookArena_, scratch);
     if (st != BookStatus::Ok) {
       LOG_ERR("FIB", "Exact-size reopen failed: %d", static_cast<int>(st));
       close();
@@ -159,12 +167,9 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
   }
   loadHyphenator();
 
-  // Per-chapter arenas last, once the open-time transients are gone.
-  if (!reallocChapterArenas()) {
-    close();
-    return false;
-  }
-
+  // Per-chapter arenas are allocated lazily by ensureChapter(): a first-open
+  // chapter build would only free them again, and every idle KB at build
+  // time is scratch budget.
   open_ = true;
   return true;
 }
@@ -329,14 +334,21 @@ uint32_t BookPaginator::fontFingerprint() const {
 
 uint32_t BookPaginator::generation() const { return freeink::book::layoutGenerationHash(params_, fontFingerprint()); }
 
+bool BookPaginator::isChapterCached(const uint16_t spineIndex) {
+  char name[sizeof(cacheName_)];
+  if (!freeink::book::pageCacheName(spineIndex, generation(), name, sizeof(name))) return false;
+  return cache_.exists(name);
+}
+
 freeink::book::BookStatus BookPaginator::ensureChapter(const uint16_t spineIndex, const BuildProgress& progress) {
   const uint32_t gen = generation();
   if (!freeink::book::pageCacheName(spineIndex, gen, cacheName_, sizeof(cacheName_))) {
     return BookStatus::Unsupported;
   }
 
-  indexArena_.reset();
   curSpine_ = kNoSpine;
+  if (!indexBuf_ && !reallocChapterArenas()) return BookStatus::OutOfMemory;
+  indexArena_.reset();
   BookStatus st = reader_.open(cache_, cacheName_, gen, indexArena_);
   if (st == BookStatus::Ok) {
     curSpine_ = spineIndex;
@@ -348,57 +360,95 @@ freeink::book::BookStatus BookPaginator::ensureChapter(const uint16_t spineIndex
   if (!isTxt_ && entry == nullptr) return BookStatus::NotFound;
   if (isTxt_ && spineIndex != 0) return BookStatus::NotFound;
 
-  // The pagination working set (layout buffers + one inflate stream + the
-  // writer's page index) lives only for this call — but it needs one big
-  // CONTIGUOUS block, and everything else the parse touches does NOT come
-  // from this arena: expat's internal pools allocate from the system heap.
-  // Grabbing the largest possible block starved exactly that — the heap
-  // dipped to ~6 KB mid-parse and a failed expat malloc surfaces as a bogus
-  // ParseError. So size adaptively: as much as available AFTER a reserve for
-  // the parser's heap use, capped at the ideal, floored at what an ordinary
-  // text chapter needs. Free the idle per-chapter arenas first so their
-  // space can coalesce into the block.
+  // The pagination working set lives only for this call, as TWO arenas:
+  // layout buffers + the writer's index in one, the parse stream (inflate
+  // window + decompressor + XML chunks) in the other. Splitting kills the
+  // single-~100 KB-contiguous-block requirement that fragmentation kept
+  // defeating — two ~50 KB blocks fit every heap shape observed so far
+  // (including a 59 KB max block). Expat's pools still come from the system
+  // heap, so a reserve stays out of both. Free the idle per-chapter arenas
+  // first so their space is available.
   reader_ = freeink::book::PageCacheReader();
   indexBuf_.reset();
   pageBuf_.reset();
 
-  // Expat pools + misc system-heap use during the parse. Measured on device:
-  // a 28 KB reserve bottomed out at ~8-10 KB free mid-build, so ~19 KB is
-  // real parser use; 36 KB keeps a comfortable floor without starving the
-  // scratch (typical chapters use ~76 KB of it).
-  constexpr size_t kParserHeapReserve = 36 * 1024;
-  constexpr size_t kScratchFloor = 88 * 1024;       // text-chapter working set + writer index
+  // Measured (small profile, host + device): layout side high water ~45.3 KB
+  // INCLUDING the writer's chunked index (~2.5 KB for a normal chapter);
+  // parse side ~46 KB for a DEFLATED entry (inflate window + decompressor
+  // are irreducible), ~4 KB for a STORED one. Expat system-heap use ~19 KB.
+  // If ParseError appears on a book that fibchecks clean on host, the
+  // reserve is being squeezed — raise it first.
+  constexpr size_t kParserHeapReserve = 22 * 1024;
+  constexpr size_t kLayoutIdeal = 60 * 1024;
+  // Floor is measured-demand-plus-margin, not comfort: heaviest observed
+  // chapter (device, incl. chunked writer index) is 44,964 B. Raising this
+  // makes builds fail upfront on heap shapes where they would have fit —
+  // a 46 KiB floor already rejected a 46,452 B offer that would have built.
+  constexpr size_t kLayoutFloor = 45 * 1024;
+  constexpr size_t kParseIdeal = 50 * 1024;
+  constexpr size_t kParseFloor = 46 * 1024;
+  constexpr size_t kParseStored = 8 * 1024;  // stored entries skip inflate state
+  constexpr size_t kAllocSlack = 64;         // TLSF block header/split overhead
 
+  const bool stored = !isTxt_ && entry->method == 0;
   const size_t freeHeap = ESP.getFreeHeap();
   const size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-  size_t scratchSize = kBuildScratchSize;
-  if (freeHeap > kParserHeapReserve && freeHeap - kParserHeapReserve < scratchSize) {
-    scratchSize = freeHeap - kParserHeapReserve;
+  const size_t budget = freeHeap > kParserHeapReserve ? freeHeap - kParserHeapReserve : 0;
+
+  // The parse arena goes first: its size is rigid (inflate state), and
+  // placing it lets TLSF spend a mid-sized pocket on it when one exists. The
+  // layout arena then takes what the heap can actually give: both draws
+  // usually carve out of the same largest block, so sizing from the block
+  // that REMAINS after the parse arena landed is what makes the pair fit —
+  // free-heap math alone kept promising space TLSF couldn't deliver. When
+  // the leftover misses the layout floor and the parse arena is still above
+  // ITS floor, shrink parse and re-measure (there is ~2 KB of allocator
+  // overhead between the two draws no upfront formula gets right).
+  const bool parseFlexible = !stored && !isTxt_;
+  size_t parseSize = parseFlexible ? kParseIdeal : kParseStored;
+  if (parseFlexible && parseSize + kLayoutFloor > budget) parseSize = kParseFloor;
+  std::unique_ptr<uint8_t[]> parseBuf;
+  std::unique_ptr<uint8_t[]> layoutBuf;
+  size_t layoutSize = 0;
+  size_t blockAfterParse = 0;
+  for (;;) {
+    parseBuf = makeUniqueNoThrow<uint8_t[]>(parseSize);
+    if (!parseBuf && parseFlexible && parseSize > kParseFloor) {
+      parseSize = kParseFloor;
+      parseBuf = makeUniqueNoThrow<uint8_t[]>(parseSize);
+    }
+    if (!parseBuf) break;
+
+    blockAfterParse = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    const size_t freeNow = ESP.getFreeHeap();
+    layoutSize = std::min(kLayoutIdeal, blockAfterParse > kAllocSlack ? blockAfterParse - kAllocSlack : 0);
+    layoutSize = std::min(layoutSize, freeNow > kParserHeapReserve ? freeNow - kParserHeapReserve : 0);
+    if (layoutSize < kLayoutFloor && parseFlexible && parseSize > kParseFloor) {
+      parseBuf.reset();  // give the block back, retry with the smaller parse arena
+      parseSize = kParseFloor;
+      continue;
+    }
+    if (layoutSize >= kLayoutFloor) layoutBuf = makeUniqueNoThrow<uint8_t[]>(layoutSize);
+    break;
   }
-  if (largestBlock > 64 && largestBlock - 64 < scratchSize) {  // allocator header slack
-    scratchSize = largestBlock - 64;
-  }
-  std::unique_ptr<uint8_t[]> scratchBuf;
-  if (scratchSize >= kScratchFloor) {
-    scratchBuf = makeUniqueNoThrow<uint8_t[]>(scratchSize);
-  }
-  if (!scratchBuf) {
-    LOG_ERR("FIB", "OOM: build scratch (want >= %u B, free heap %u, max block %u)",
-            static_cast<unsigned>(kScratchFloor), static_cast<unsigned>(freeHeap), static_cast<unsigned>(largestBlock));
+  if (!layoutBuf || !parseBuf) {
+    LOG_ERR("FIB", "OOM: build arenas (want %u+%u B, free heap %u, max block %u, after parse %u)",
+            static_cast<unsigned>(layoutSize), static_cast<unsigned>(parseSize), static_cast<unsigned>(freeHeap),
+            static_cast<unsigned>(largestBlock), static_cast<unsigned>(blockAfterParse));
+    layoutBuf.reset();
+    parseBuf.reset();
     reallocChapterArenas();  // restore the per-chapter arenas for the caller
     return BookStatus::OutOfMemory;
   }
-  if (scratchSize != kBuildScratchSize) {
-    LOG_INF("FIB", "Build scratch sized to %u B (free heap %u, max block %u)", static_cast<unsigned>(scratchSize),
-            static_cast<unsigned>(freeHeap), static_cast<unsigned>(largestBlock));
-  }
-  Arena scratch(scratchBuf.get(), scratchSize);
+  Arena scratch(layoutBuf.get(), layoutSize);
+  Arena parseArena(parseBuf.get(), parseSize);
 
   const uint32_t t0 = millis();
   {
     PageCacheWriter writer;
     if (!writer.begin(cache_, cacheName_, gen, scratch)) {
-      scratchBuf.reset();
+      layoutBuf.reset();
+      parseBuf.reset();
       reallocChapterArenas();
       return BookStatus::IoError;
     }
@@ -407,21 +457,26 @@ freeink::book::BookStatus BookPaginator::ensureChapter(const uint16_t spineIndex
     uint32_t totalChars = 0;
     st = isTxt_ ? ChapterLayout::layoutPlainText(source_, params_, scratch, sink, nullptr, &totalChars)
                 : ChapterLayout::layout(source_, book_.zip(), *entry, item->href, params_, scratch, sink, nullptr,
-                                        &totalChars);
+                                        &totalChars, &parseArena);
     writer.setTotalChars(totalChars);
     if (st == BookStatus::Ok && !writer.finish()) st = BookStatus::IoError;
     if (st != BookStatus::Ok) {
-      LOG_ERR("FIB", "Chapter %u layout failed: %d (scratch high water %u/%u B)", spineIndex, static_cast<int>(st),
-              static_cast<unsigned>(scratch.highWater()), static_cast<unsigned>(scratchSize));
-      scratchBuf.reset();
+      LOG_ERR("FIB", "Chapter %u layout failed: %d (layout %u/%u refused %u, parse %u/%u refused %u B)", spineIndex,
+              static_cast<int>(st), static_cast<unsigned>(scratch.highWater()), static_cast<unsigned>(layoutSize),
+              static_cast<unsigned>(scratch.failedAllocSize()), static_cast<unsigned>(parseArena.highWater()),
+              static_cast<unsigned>(parseSize), static_cast<unsigned>(parseArena.failedAllocSize()));
+      layoutBuf.reset();
+      parseBuf.reset();
       reallocChapterArenas();
       return st;
     }
-    LOG_INF("FIB", "Chapter %u paginated: %u pages in %ums (scratch high water %u/%u B, free heap %u)", spineIndex,
+    LOG_INF("FIB", "Chapter %u paginated: %u pages in %ums (layout %u/%u, parse %u/%u B, free heap %u)", spineIndex,
             writer.pageCount(), static_cast<unsigned>(millis() - t0), static_cast<unsigned>(scratch.highWater()),
-            static_cast<unsigned>(scratchSize), static_cast<unsigned>(ESP.getFreeHeap()));
+            static_cast<unsigned>(layoutSize), static_cast<unsigned>(parseArena.highWater()),
+            static_cast<unsigned>(parseSize), static_cast<unsigned>(ESP.getFreeHeap()));
   }
-  scratchBuf.reset();
+  layoutBuf.reset();
+  parseBuf.reset();
   if (!reallocChapterArenas()) return BookStatus::OutOfMemory;
 
   indexArena_.reset();

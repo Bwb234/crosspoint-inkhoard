@@ -1,6 +1,7 @@
 #include "TxtReaderActivity.h"
 
 #include <FontCacheManager.h>
+#include <FontDecompressor.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -108,11 +109,25 @@ bool TxtReaderActivity::ensureChapterAndPosition() {
     chapterOpen = false;
     buildPopupShown = false;
 
+    if (!paginator.isChapterCached(0)) {
+      GUI.drawPopup(renderer, tr(STR_INDEXING));
+      pagesUntilFullRefresh = 1;
+      buildPopupShown = true;
+      // Free the glyph caches for the build; they re-warm on the next render.
+      // (SD font tables stay resident — layout needs them per glyph.)
+      if (auto* fcm = renderer.getFontCacheManager()) {
+        if (auto* fdc = fcm->getDecompressor()) fdc->clearCache();
+      }
+      // Lend the framebuffer's 48 KB to the build arenas; the popup stays on
+      // the panel and render() fully redraws after the restore below.
+      renderer.releaseFrameBufferForBuild();
+    }
+
     BookPaginator::BuildProgress progressCb;
     progressCb.ctx = this;
     progressCb.fn = [](void* ctx, uint32_t) {
       auto* self = static_cast<TxtReaderActivity*>(ctx);
-      if (!self->buildPopupShown) {
+      if (!self->buildPopupShown && self->renderer.hasFrameBuffer()) {
         GUI.drawPopup(self->renderer, tr(STR_INDEXING));
         self->pagesUntilFullRefresh = 1;
         self->buildPopupShown = true;
@@ -120,6 +135,10 @@ bool TxtReaderActivity::ensureChapterAndPosition() {
     };
 
     const auto status = paginator.ensureChapter(0, progressCb);
+    if (!renderer.hasFrameBuffer() && !renderer.restoreFrameBufferAfterBuild()) {
+      LOG_ERR("TRS", "Framebuffer restore failed - restarting");
+      ESP.restart();
+    }
     if (status != freeink::book::BookStatus::Ok) {
       LOG_ERR("TRS", "Pagination failed: %d", static_cast<int>(status));
       return false;

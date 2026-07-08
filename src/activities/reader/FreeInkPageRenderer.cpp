@@ -5,10 +5,12 @@
 #include <HalStorage.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <esp_heap_caps.h>
 #include <render/ImageRenderer.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 
 #include "BookPaginator.h"
 #include "CrossPointSettings.h"
@@ -20,7 +22,13 @@ using freeink::book::PageTextRun;
 namespace {
 
 // Decode scratch for one image: inflate window + PNG/JPEG decoder state.
-constexpr size_t kImageScratchSize = 72 * 1024;
+// Ideal covers a deflated PNG (46 KB inflate + decoder + row buffers); the
+// size flexes down to what the largest free block can give — a stored JPEG
+// needs far less, and ImageRenderer fails soft (OutOfMemory) if the arena
+// really is too small for the specific image.
+constexpr size_t kImageScratchIdeal = 72 * 1024;
+constexpr size_t kImageScratchFloor = 32 * 1024;
+constexpr size_t kImageAllocSlack = 64;
 
 // 4x4 Bayer matrix (0..15) for quantizing the two mid-gray levels in BW mode.
 constexpr uint8_t kBayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
@@ -72,12 +80,16 @@ bool ensureImageCached(BookPaginator& paginator, const std::string& cacheDir, co
   if (Storage.exists(path)) return true;
   (void)cacheDir;
 
-  auto scratchBuf = makeUniqueNoThrow<uint8_t[]>(kImageScratchSize);
+  const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  const size_t scratchSize = std::min(kImageScratchIdeal, block > kImageAllocSlack ? block - kImageAllocSlack : 0);
+  std::unique_ptr<uint8_t[]> scratchBuf;
+  if (scratchSize >= kImageScratchFloor) scratchBuf = makeUniqueNoThrow<uint8_t[]>(scratchSize);
   if (!scratchBuf) {
-    LOG_ERR("FIBIMG", "OOM: image decode scratch (%u B)", static_cast<unsigned>(kImageScratchSize));
+    LOG_ERR("FIBIMG", "OOM: image decode scratch (want %u B, max block %u)", static_cast<unsigned>(scratchSize),
+            static_cast<unsigned>(block));
     return false;
   }
-  freeink::book::Arena scratch(scratchBuf.get(), kImageScratchSize);
+  freeink::book::Arena scratch(scratchBuf.get(), scratchSize);
 
   char tmpPath[192];
   snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", path);
@@ -119,8 +131,15 @@ void drawImageFromCache(const GfxRenderer& renderer, const char* path, const Pag
   if (rowBytes > sizeof(rowBuf)) return;
 
   for (uint16_t y = 0; y < h; ++y) {
-    if (f.read(rowBuf, rowBytes) != rowBytes) return;
     const int screenY = img.y + y;
+    // Tiled-grayscale band culling: rows outside the active strip are seeked
+    // past, not read — without this every strip pass re-reads and re-iterates
+    // the whole image (12+ full passes for a cover page, seconds of work).
+    if (!renderer.glyphIntersectsStrip(img.x, screenY, img.x + w, screenY + 1)) {
+      if (!f.seekCur(rowBytes)) return;
+      continue;
+    }
+    if (f.read(rowBuf, rowBytes) != rowBytes) return;
     for (uint16_t x = 0; x < w; ++x) {
       const uint8_t level = (rowBuf[x >> 2] >> ((3 - (x & 3)) * 2)) & 0x3;  // 0=black..3=white
       const int screenX = img.x + x;

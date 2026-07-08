@@ -1,6 +1,23 @@
 #include "CpFontAdapter.h"
 
+#include <SdCardFont.h>
 #include <Utf8.h>
+
+namespace {
+
+// SD-backed families must answer layout metrics from resident metadata + the
+// persistent advance table. The generic getGlyph() path loads the FULL BITMAP
+// through an 8-slot overflow ring on every miss — during a chapter build that
+// is one SD read per character occurrence and the build crawls (observed as
+// an endless "SDCF Overflow: loaded U+..." stream while paginating).
+SdCardFont* sdFontFor(const EpdFontFamily* family, const EpdFontFamily::Style style, uint8_t* styleIdxOut) {
+  const EpdFontData* data = family->getData(style);
+  if (data == nullptr || data->glyphMissCtx == nullptr) return nullptr;
+  *styleIdxOut = SdCardFont::styleIdxFromMissCtx(data->glyphMissCtx);
+  return SdCardFont::fromMissCtx(data->glyphMissCtx);
+}
+
+}  // namespace
 
 bool CpFontAdapter::addSize(const uint16_t sizePx, const EpdFontFamily* family) {
   if (family == nullptr || count_ >= kMaxLadder) return false;
@@ -35,6 +52,10 @@ int16_t CpFontAdapter::advance(const uint32_t codepoint, const uint16_t sizePx, 
   if (utf8IsCombiningMark(codepoint)) return 0;
   const EpdFontFamily* family = familyFor(sizePx);
   if (family == nullptr) return 0;
+  uint8_t sdStyle = 0;
+  if (SdCardFont* sd = sdFontFor(family, style_, &sdStyle)) {
+    return static_cast<int16_t>(fp4::toPixel(sd->ensureAdvance(sdStyle, codepoint)));
+  }
   const EpdGlyph* glyph = family->getGlyph(codepoint, style_);
   return glyph != nullptr ? static_cast<int16_t>(fp4::toPixel(glyph->advanceX)) : 0;
 }
@@ -55,9 +76,16 @@ int16_t CpFontAdapter::kerning(const uint32_t left, const uint32_t right, const 
   if (utf8IsCombiningMark(left) || utf8IsCombiningMark(right)) return 0;
   const EpdFontFamily* family = familyFor(sizePx);
   if (family == nullptr) return 0;
-  const EpdGlyph* leftGlyph = family->getGlyph(left, style_);
-  if (leftGlyph == nullptr) return 0;
-  const int32_t advFP = leftGlyph->advanceX;                       // 12.4 fixed-point
+  int32_t advFP = 0;  // 12.4 fixed-point
+  uint8_t sdStyle = 0;
+  if (SdCardFont* sd = sdFontFor(family, style_, &sdStyle)) {
+    advFP = sd->ensureAdvance(sdStyle, left);
+    if (advFP == 0) return 0;
+  } else {
+    const EpdGlyph* leftGlyph = family->getGlyph(left, style_);
+    if (leftGlyph == nullptr) return 0;
+    advFP = leftGlyph->advanceX;
+  }
   const int32_t kernFP = family->getKerning(left, right, style_);  // 4.4 fixed-point
   // Differential-rounding parity: layout adds advance(left) + kerning(left,
   // right); returning the delta between the renderer's fused snap and the
@@ -73,7 +101,12 @@ uint32_t CpFontAdapter::ligature(const uint32_t left, const uint32_t right, uint
 
 bool CpFontAdapter::hasGlyph(const uint32_t codepoint) const {
   if (count_ == 0) return false;
-  return ladder_[count_ - 1].family->hasGlyph(codepoint, style_);
+  const EpdFontFamily* family = ladder_[count_ - 1].family;
+  uint8_t sdStyle = 0;
+  if (SdCardFont* sd = sdFontFor(family, style_, &sdStyle)) {
+    return sd->hasGlyphMeta(sdStyle, codepoint);
+  }
+  return family->hasGlyph(codepoint, style_);
 }
 
 const freeink::book::GlyphBitmap* CpFontAdapter::rasterize(uint32_t, uint16_t) {

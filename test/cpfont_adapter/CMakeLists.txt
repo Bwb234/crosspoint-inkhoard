@@ -12,6 +12,7 @@ if(NOT EXISTS "${FREEINK_BOOK_INCLUDE}")
 else()
   add_executable(CpFontAdapterTest
     CpFontAdapterTest.cpp
+    SdCardFontStubs.cpp
     ${REPO_ROOT}/src/activities/reader/CpFontAdapter.cpp
     ${REPO_ROOT}/lib/EpdFont/EpdFont.cpp
     ${REPO_ROOT}/lib/EpdFont/EpdFontFamily.cpp
