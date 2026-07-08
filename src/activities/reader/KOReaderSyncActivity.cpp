@@ -86,11 +86,10 @@ void KOReaderSyncActivity::resolveRemotePosition() {
           ? std::clamp((remoteProgress.percentage - chapterStart) / (chapterEnd - chapterStart), 0.0f, 1.0f)
           : 0.0f;
 
-  const freeink::book::ManifestItem* item = paginator.book().spineItem(spine);
-  const freeink::book::ZipEntry* entry = item != nullptr ? paginator.book().zip().find(item->href) : nullptr;
-  if (entry == nullptr) return;
+  freeink::book::ZipEntry entry;
+  if (!paginator.spineZipEntry(spine, &entry)) return;
   uint32_t charStart = 0;
-  if (BookXPath::charStartForXpath(*paginator.bookSource(), paginator.book().zip(), *entry, remoteProgress.progress,
+  if (BookXPath::charStartForXpath(*paginator.bookSource(), paginator.zip(), entry, remoteProgress.progress,
                                    &charStart)) {
     remotePosition.charStart = charStart;
     remotePosition.hasCharStart = true;

@@ -91,6 +91,23 @@ class SdCacheStorage : public freeink::book::CacheStorage {
     return true;
   }
 
+  // Mid-build page read-back (incremental layout): the write handle is
+  // opened O_RDWR by SDCardManager, so seek-read-seek-back on the SAME
+  // handle is coherent — the exact pattern the legacy engine used. The
+  // write cursor MUST be restored or subsequent writes corrupt the cache;
+  // if that seek fails, fail loudly.
+  int32_t readBackAt(uint32_t offset, void* dst, uint32_t len) override {
+    if (!write_.isOpen()) return -1;
+    const size_t writePos = write_.position();
+    if (!write_.seekSet(offset)) return -1;
+    const int32_t n = write_.read(dst, len);
+    if (!write_.seekSet(writePos)) {
+      LOG_ERR("FIBCACHE", "readBackAt: write cursor restore FAILED");
+      return -1;
+    }
+    return n;
+  }
+
  private:
   static constexpr const char* kTempName = "_tmp.fibp";
 

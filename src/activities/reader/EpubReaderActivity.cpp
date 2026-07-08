@@ -202,7 +202,7 @@ float EpubReaderActivity::currentBookFraction() const {
 
 void EpubReaderActivity::openReaderMenu() {
   const int currentPageDisplay = paginator.chapterReady() ? static_cast<int>(currentPage) + 1 : 0;
-  const int totalPages = paginator.chapterReady() ? static_cast<int>(paginator.pageCount()) : 0;
+  const int totalPages = paginator.chapterReady() ? static_cast<int>(paginator.estimatedTotalPages()) : 0;
   const int bookProgressPercent = clampPercent(static_cast<int>(currentBookFraction() * 100.0f + 0.5f));
   startActivityForResult(
       std::make_unique<EpubReaderMenuActivity>(renderer, mappedInput, paginator.title(), currentPageDisplay, totalPages,
@@ -249,6 +249,19 @@ void EpubReaderActivity::loop() {
     pendingReadFolderMove = SETTINGS.moveFinishedToReadFolder && !isInReadFolder(path_);
   } else {
     pendingReadFolderMove = false;
+  }
+
+  // Incremental chapter build: keep a small window laid out ahead of the
+  // reader, in short bursts, only when no render is in flight. NEVER pump
+  // unboundedly — an ungated background build once locked the legacy reader
+  // solid. A chapter bigger than the window simply stays partial (suspended
+  // to disk on exit) and follows the reader; a small remainder finalizes.
+  if (paginator.isBuilding() && !RenderLock::peek()) {
+    constexpr uint32_t kWindowAhead = 5;
+    if (paginator.pageCount() < static_cast<uint32_t>(currentPage) + 1 + kWindowAhead) {
+      RenderLock lock;
+      if (paginator.isBuilding()) paginator.pumpBuild(2);
+    }
   }
 
   if (automaticPageTurnActive) {
@@ -562,11 +575,10 @@ bool EpubReaderActivity::launchKOReaderSync() {
   // the whole-book percentage is the robust fallback.
   std::string localXPath = syntheticXPath(currentSpineIndex);
   if (!paginator.isTxt()) {
-    const freeink::book::ManifestItem* item = paginator.book().spineItem(currentSpineIndex);
-    const freeink::book::ZipEntry* entry = item != nullptr ? paginator.book().zip().find(item->href) : nullptr;
-    if (entry != nullptr) {
-      localXPath = BookXPath::xpathForCharStart(*paginator.bookSource(), paginator.book().zip(), *entry,
-                                                currentSpineIndex, lastCharStart);
+    freeink::book::ZipEntry entry;
+    if (paginator.spineZipEntry(currentSpineIndex, &entry)) {
+      localXPath = BookXPath::xpathForCharStart(*paginator.bookSource(), paginator.zip(), entry, currentSpineIndex,
+                                                lastCharStart);
     }
   }
   SavedProgressPosition localKoPos{std::move(localXPath), currentBookFraction()};
@@ -625,7 +637,9 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 
 void EpubReaderActivity::pageTurn(bool isForwardTurn) {
   if (isForwardTurn) {
-    if (paginator.chapterReady() && currentPage + 1 < paginator.pageCount()) {
+    // While a chapter is still building, pageCount() is a watermark, not the
+    // end of the chapter — keep advancing; render() builds the page in.
+    if (paginator.chapterReady() && (currentPage + 1 < paginator.pageCount() || paginator.isBuilding())) {
       currentPage++;
     } else {
       currentSpineIndex++;  // spineCount == end-of-book screen
@@ -691,7 +705,23 @@ bool EpubReaderActivity::ensureChapterAndPosition() {
       }
     };
 
-    const auto status = paginator.ensureChapter(static_cast<uint16_t>(currentSpineIndex), progressCb);
+    // Landing target: a known charStart (resume, reanchor, footnote return),
+    // a chapter fraction (migrated legacy progress, percent jumps), or the
+    // chapter top (plain page turns) all go INCREMENTAL on giant chapters —
+    // the build runs just past the landing point and finishes behind the
+    // reader. Only anchors (need the full anchor map) and last-page entries
+    // (need the final count) take the classic blocking build (kBuildAll).
+    uint32_t targetChar = BookPaginator::kBuildAll;
+    float targetFraction = -1.0f;
+    if (pendingCharStart.has_value()) {
+      targetChar = *pendingCharStart;
+    } else if (pendingChapterFraction.has_value()) {
+      targetFraction = *pendingChapterFraction;
+    } else if (pendingAnchor.empty() && !pendingLastPage) {
+      targetChar = 0;  // entering at the chapter top
+    }
+    const auto status =
+        paginator.ensureChapter(static_cast<uint16_t>(currentSpineIndex), progressCb, targetChar, targetFraction);
     if (!renderer.hasFrameBuffer() && !renderer.restoreFrameBufferAfterBuild()) {
       // Unrecoverable: nothing can be drawn again. The build arenas are freed
       // (ensureChapter released them), so this realloc failing means the heap
@@ -727,9 +757,22 @@ bool EpubReaderActivity::ensureChapterAndPosition() {
     pendingChapterFraction.reset();
     pendingLastPage = false;
   } else if (pendingChapterFraction.has_value()) {
-    const uint32_t targetChar =
-        static_cast<uint32_t>(*pendingChapterFraction * static_cast<float>(paginator.totalChars()));
-    currentPage = paginator.pageForChar(targetChar);
+    if (paginator.isBuilding()) {
+      // totalChars() is a build watermark here: fraction x watermark would
+      // land at fraction-of-the-PREFIX (half the intended depth for a 50%
+      // resume). Resolve against the estimated total page count instead;
+      // the build stopped right at the fraction's byte offset, so the
+      // clamped watermark page IS the landing page.
+      const uint32_t est = paginator.estimatedTotalPages();
+      const uint32_t built = paginator.pageCount();
+      uint32_t page = static_cast<uint32_t>(*pendingChapterFraction * static_cast<float>(est));
+      if (page >= built) page = built > 0 ? built - 1 : 0;
+      currentPage = page;
+    } else {
+      const uint32_t targetChar =
+          static_cast<uint32_t>(*pendingChapterFraction * static_cast<float>(paginator.totalChars()));
+      currentPage = paginator.pageForChar(targetChar);
+    }
     pendingChapterFraction.reset();
     pendingLastPage = false;
   } else if (pendingLastPage) {
@@ -737,8 +780,22 @@ bool EpubReaderActivity::ensureChapterAndPosition() {
     pendingLastPage = false;
   }
 
+  // Reaching past the last built page of an in-progress build means "keep
+  // building" (handled in render), not "clamp": pageCount() is a watermark.
+  if (paginator.isBuilding() && currentPage >= paginator.pageCount()) {
+    constexpr uint32_t kCatchUpBurst = 4;
+    if (!buildPopupShown && currentPage >= paginator.pageCount() + 2) {
+      // A deep jump has real work ahead of it; the burst below blocks.
+      GUI.drawPopup(renderer, tr(STR_INDEXING));
+      pagesUntilFullRefresh = 1;
+      buildPopupShown = true;
+    }
+    while (paginator.isBuilding() && currentPage >= paginator.pageCount()) {
+      if (paginator.pumpBuild(kCatchUpBurst) != freeink::book::BookStatus::Ok) break;
+    }
+  }
   if (paginator.pageCount() > 0 && currentPage >= paginator.pageCount()) {
-    currentPage = paginator.pageCount() - 1;
+    currentPage = paginator.pageCount() - 1;  // true end of chapter (or build failure)
   }
   return true;
 }
@@ -959,7 +1016,10 @@ void EpubReaderActivity::renderPage(const freeink::book::Page& page, int) {
 
 void EpubReaderActivity::renderStatusBar() const {
   const int currentPageDisplay = static_cast<int>(currentPage) + 1;
-  const float pageCount = paginator.chapterReady() ? static_cast<float>(paginator.pageCount()) : 0.0f;
+  // estimatedTotalPages() equals pageCount() once the chapter is fully
+  // built; while building it is the byte-ratio estimate, so "page X of Y"
+  // does not display the watermark as if it were the chapter total.
+  const float pageCount = paginator.chapterReady() ? static_cast<float>(paginator.estimatedTotalPages()) : 0.0f;
   const float bookProgress = currentBookFraction() * 100.0f;
 
   std::string title;

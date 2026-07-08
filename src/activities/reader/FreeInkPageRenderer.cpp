@@ -100,8 +100,8 @@ bool ensureImageCached(BookPaginator& paginator, const std::string& cacheDir, co
                              static_cast<uint8_t>(img.height & 0xFF), static_cast<uint8_t>(img.height >> 8)};
   writer.failed = writer.file.write(header, sizeof(header)) != sizeof(header);
 
-  const freeink::book::BookStatus st = freeink::book::ImageRenderer::render(
-      *paginator.bookSource(), paginator.book().zip(), img, scratch, &G2Writer::onRow, &writer);
+  const freeink::book::BookStatus st = freeink::book::ImageRenderer::render(*paginator.bookSource(), paginator.zip(),
+                                                                            img, scratch, &G2Writer::onRow, &writer);
   writer.file.close();  // close before remove/rename below
   if (st != freeink::book::BookStatus::Ok || writer.failed) {
     LOG_ERR("FIBIMG", "Image decode failed (%d): %s", static_cast<int>(st), img.href);

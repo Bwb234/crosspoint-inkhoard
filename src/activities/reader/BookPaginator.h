@@ -20,6 +20,7 @@
 //                 produce one contiguous block
 // Steady-state page turns touch only the page arena (~2 KB used).
 
+#include <BookCatalog.h>
 #include <FreeInkBook.h>
 #include <cache/PageCache.h>
 #include <css/Css.h>
@@ -58,21 +59,40 @@ class BookPaginator {
   bool isOpen() const { return open_; }
   bool isTxt() const { return isTxt_; }
 
-  freeink::book::Book& book() { return book_; }
   freeink::book::BookSource* bookSource() { return &source_; }
-  size_t spineCount() const { return isTxt_ ? 1 : book_.spineCount(); }
+  // Container lookups (image probes, internal links) -- the in-RAM catalog or
+  // the SD-backed one, whichever this book opened with.
+  const freeink::book::ZipCatalog& zip() const { return catalogMode_ ? catalog_.zip() : book_.zip(); }
+  // True when the book outgrew the in-RAM probe ladder and runs on the
+  // SD-backed BookCatalog (webnovel omnibuses).
+  bool isCatalogMode() const { return catalogMode_; }
+  size_t spineCount() const {
+    if (isTxt_) return 1;
+    return catalogMode_ ? catalog_.spineCount() : book_.spineCount();
+  }
   const char* language() const;
-  const char* title() const { return isTxt_ ? "" : book_.metadata().title; }
-  const char* author() const { return isTxt_ ? "" : book_.metadata().author; }
+  const char* title() const {
+    return isTxt_ ? "" : (catalogMode_ ? catalog_.metadata().title : book_.metadata().title);
+  }
+  const char* author() const {
+    return isTxt_ ? "" : (catalogMode_ ? catalog_.metadata().author : book_.metadata().author);
+  }
+  // ZipEntry of a spine item (KOSync/xpath bridges). False when absent.
+  bool spineZipEntry(int spineIndex, freeink::book::ZipEntry* out) const;
 
   // --- TOC (flattened, resolved to spine indices) --------------------------
   struct TocItem {
+    // In catalog mode both strings live in a shared internal buffer that the
+    // NEXT tocItem() call overwrites -- use or copy them before iterating on.
     const char* title;
     const char* fragment;  // anchor within the chapter, or nullptr
     int spineIndex;        // -1 when the href is not a spine item
     uint8_t depth;
   };
-  size_t tocCount() const { return isTxt_ ? 0 : book_.tocCount(); }
+  size_t tocCount() const {
+    if (isTxt_) return 0;
+    return catalogMode_ ? catalog_.tocCount() : book_.tocCount();
+  }
   TocItem tocItem(size_t index) const;
   // First TOC entry pointing at `spineIndex` or an earlier chapter (the
   // chapter's display title); -1 when the TOC has no such entry.
@@ -100,14 +120,41 @@ class BookPaginator {
 
   // Opens the chapter's page cache for the current generation, laying the
   // chapter out first when missing or stale. Heavy only on that miss.
-  freeink::book::BookStatus ensureChapter(uint16_t spineIndex, const BuildProgress& progress = BuildProgress());
+  //
+  // `targetChar` — the landing position (chapter character offset), when the
+  // caller knows it. For a GIANT uncached chapter (or a suspended partial)
+  // this switches to the INCREMENTAL path: the chapter builds only a little
+  // past the target, isBuilding() turns true, pages serve from the partial
+  // build, and the caller finishes the rest via pumpBuild() between page
+  // turns. kBuildAll (the default) forces the classic blocking full build —
+  // required for percent jumps (they need the final page count).
+  // `targetFraction` (0..1) is the fraction-of-chapter alternative for
+  // landings that predate exact charStart positions (migrated legacy
+  // progress, whole-book percent jumps): the incremental build runs until
+  // the parsed BYTE ratio passes it — bytes track extracted characters
+  // closely enough that the subsequent pageForChar lands within a page.
+  static constexpr uint32_t kBuildAll = 0xFFFFFFFF;
+  freeink::book::BookStatus ensureChapter(uint16_t spineIndex, const BuildProgress& progress = BuildProgress(),
+                                          uint32_t targetChar = kBuildAll, float targetFraction = -1.0f);
   bool chapterReady() const { return curSpine_ != kNoSpine; }
   uint16_t currentSpine() const { return curSpine_; }
 
-  uint32_t pageCount() const { return reader_.pageCount(); }
-  uint32_t totalChars() const { return reader_.totalChars(); }
-  uint32_t charStartOfPage(uint32_t pageIndex) const { return reader_.charStart(pageIndex); }
-  uint32_t pageForChar(uint32_t charOffset) const { return reader_.pageForChar(charOffset); }
+  // --- incremental build (giant single-spine chapters) ---------------------
+  bool isBuilding() const { return building_; }
+  // Lays out up to `pages` more pages of the in-progress build; finalizes
+  // (writer commit + cache reopen) when the chapter ends. Callers gate this
+  // on a read-ahead window (currentPage + N) — never pump unboundedly.
+  freeink::book::BookStatus pumpBuild(uint32_t pages);
+  // Byte-ratio estimate of the final page count while building ("page X of
+  // ~Y"); the exact count once the build (or cache) is complete.
+  uint32_t estimatedTotalPages() const;
+
+  // While building incrementally these merge the live writer (rebuild
+  // watermark) with any reopened partial — see the .cpp implementations.
+  uint32_t pageCount() const;
+  uint32_t totalChars() const;
+  uint32_t charStartOfPage(uint32_t pageIndex) const;
+  uint32_t pageForChar(uint32_t charOffset) const;
   // Resolve an id="" fragment in the CURRENT chapter to a char offset.
   bool charForAnchor(const char* fragment, uint32_t* charOut) const;
 
@@ -143,10 +190,33 @@ class BookPaginator {
   bool reallocChapterArenas();
   void loadHyphenator();
   uint32_t fontFingerprint() const;
+  // Uncompressed bytes of a spine item -- the whole-book progress weights.
+  uint32_t spineSizeAt(size_t spineIndex) const;
+  // SD-backed catalog path (omnibuses whose container outgrows the probe
+  // ladder): open an existing catalog.fibc / build one. openCatalog removes
+  // a stale index (changed container) and returns false so the caller can
+  // rebuild; buildCatalog expects the framebuffer already lent.
+  bool openCatalog();
+  bool buildCatalog();
+  // Builds + compacts the book stylesheet (CSS items from whichever catalog).
+  void buildStylesheet(freeink::book::Arena& scratch);
+
+  // Incremental-build internals. A "giant" chapter (uncompressed size above
+  // kIncrementalThreshold) is extracted once to <cacheDir>/xNNNN.raw so the
+  // resident parse state is the stored-entry ~8 KB plus probe headroom, then
+  // laid out through a ChapterLayoutSession feeding buildWriter_. Session
+  // arenas (buildLayoutBuf_/buildParseBuf_) stay allocated while reading;
+  // suspendBuild() commits a partial cache on exit/spine-switch.
+  freeink::book::BookStatus startIncremental(uint16_t spineIndex, const freeink::book::ZipEntry& entry,
+                                             uint32_t targetChar, float targetFraction, const BuildProgress& progress);
+  freeink::book::BookStatus finalizeBuild();
+  void suspendBuild();
+  bool extractChapter(uint16_t spineIndex, const freeink::book::ZipEntry& entry);
 
   SdBookSource source_;
   SdCacheStorage cache_;
   freeink::book::Book book_;
+  freeink::book::BookCatalog catalog_;  // SD-backed container index (omnibuses)
   freeink::book::LayoutParams params_;
   freeink::book::PageCacheReader reader_;
   freeink::book::FontChain chain_;
@@ -176,4 +246,28 @@ class BookPaginator {
   uint16_t curSpine_ = kNoSpine;
   bool open_ = false;
   bool isTxt_ = false;
+  bool catalogMode_ = false;
+  std::string cacheDir_;  // per-book cache directory (extraction files live here)
+
+  // Current chapter identity. curEntry_ must be a MEMBER: the incremental
+  // layout session's ZipEntryReader retains a pointer to it across steps, and
+  // in catalog mode there is no arena-resident entry to point at.
+  freeink::book::ZipEntry curEntry_{};
+  char chapterHref_[512] = "";
+  // tocItem() string backing in catalog mode (single slot, see TocItem note).
+  mutable char tocTitleBuf_[256];
+  mutable char tocFragBuf_[256];
+
+  // Incremental-build session state (live only while building_).
+  freeink::book::ChapterLayoutSession buildSession_;
+  freeink::book::PageCacheWriter buildWriter_;
+  SdBookSource chapterSource_;                 // the extracted raw chapter file
+  freeink::book::ZipEntry rawEntry_{};         // headerless entry over chapterSource_
+  std::unique_ptr<uint8_t[]> buildLayoutBuf_;  // session layout arena backing
+  std::unique_ptr<uint8_t[]> buildParseBuf_;   // session parse arena backing
+  freeink::book::Arena buildLayoutArena_;
+  freeink::book::Arena buildParseArena_;
+  uint32_t buildGeneration_ = 0;  // generation the session was started under
+  bool building_ = false;
+  bool partialReaderOpen_ = false;  // reader_ holds a partial while rebuilding
 };
