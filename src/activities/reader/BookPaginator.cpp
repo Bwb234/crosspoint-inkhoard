@@ -76,14 +76,28 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
   if (!isTxt_) {
     bool fbLent = false;
 
-    // Catalog fast path: an existing catalog.fibc means this container
-    // already outgrew the in-RAM probe ladder on a previous open -- load the
-    // compact resident tables and skip the ladder entirely. A stale index
-    // (container changed) is removed inside openCatalog() and the ladder
-    // below decides afresh what the book now needs.
+    // The SD catalog is the DEFAULT container backend for every EPUB.
+    // Fast path: an existing catalog.fibc with a matching fingerprint opens
+    // with no container parse at all -- just the compact resident tables
+    // (a few KB for a normal book). A stale index (container changed) is
+    // removed inside openCatalog() and rebuilt below.
     if (cache_.exists(freeink::book::BookCatalog::kCatalogName)) {
       catalogMode_ = openCatalog();
     }
+    if (!catalogMode_) {
+      // First open (or stale index): stream the container index to SD once,
+      // then every later open takes the fast path above. The build wants two
+      // ~50-96 KB arenas, so borrow the framebuffer -- the LOADING popup
+      // already on the panel survives (e-ink holds its image without the
+      // buffer).
+      renderer.releaseFrameBufferForBuild();
+      fbLent = true;
+      catalogMode_ = buildCatalog() && openCatalog();
+      if (!catalogMode_) {
+        LOG_INF("FIB", "Catalog build failed; falling back to in-RAM open");
+      }
+    }
+    // FALLBACK (catalog build failed: IoError, OOM): the legacy in-RAM open.
     // The whole book budget must coexist with a ~100+ KB chapter-build
     // scratch on a heap where the reader sees ~140 KB free, so worst-case
     // arena sizing is unaffordable. Open in two passes: parse into a
@@ -100,10 +114,9 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
     // region the chapter builds need.
     size_t bookUsed = 0;
     if (!catalogMode_) {
-      // Probe ladder: most books fit the 48 KB rung; webnovel omnibuses
-      // (1500+ spine items) need far more container metadata, so the bigger
-      // rungs borrow the framebuffer (the LOADING popup already on the panel
-      // survives — e-ink holds its image without the buffer).
+      // Probe ladder: most books fit the 48 KB rung; larger containers need
+      // more metadata, so bigger rungs exist. The framebuffer is already
+      // lent from the catalog-build attempt above.
       static constexpr size_t kProbeSizes[] = {kBookArenaSize, 72 * 1024, 96 * 1024};
       BookStatus st = BookStatus::OutOfMemory;
       for (size_t attempt = 0; attempt < sizeof(kProbeSizes) / sizeof(kProbeSizes[0]); ++attempt) {
@@ -135,21 +148,9 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
         if (st != BookStatus::OutOfMemory) break;  // real parse error, not arena size
         LOG_DBG("FIB", "Book probe outgrew %u B, retrying larger", static_cast<unsigned>(probeSize));
       }
-      if (st == BookStatus::OutOfMemory) {
-        // Even the 96 KB rung overflowed: webnovel-omnibus territory (1,700+
-        // spine items need ~400 KB of container metadata). Build the
-        // SD-backed catalog instead -- compact resident tables, everything
-        // string-shaped stays on the card. The framebuffer is already lent
-        // unless the heap itself was short, in which case the catalog build
-        // fails with its own clear log.
-        if (!fbLent) {
-          renderer.releaseFrameBufferForBuild();
-          fbLent = true;
-        }
-        LOG_INF("FIB", "Container outgrew the probe ladder; building SD catalog");
-        catalogMode_ = buildCatalog() && openCatalog();
-        if (catalogMode_) st = BookStatus::Ok;
-      }
+      // No further recourse when even the 96 KB rung overflows: the catalog
+      // build (the path that handles 400 KB omnibus metadata) already failed
+      // above, and its log says why.
       if (st != BookStatus::Ok) {
         LOG_ERR("FIB", "Book open failed: %d (%s)", static_cast<int>(st), path.c_str());
         if (fbLent && !renderer.restoreFrameBufferAfterBuild()) ESP.restart();
@@ -250,10 +251,15 @@ bool BookPaginator::openCatalog() {
 
 // Streams the container index to SD. Caller has the framebuffer lent; the
 // two arenas mirror the chapter-build split (record tables vs parse stream).
-// Measured for a 1,732-spine omnibus: records ~72.5 KB, parse ~45.3 KB.
+// The records demand scales with the entry count (~42 B each): measured
+// ~72.5 KB records + ~45.3 KB parse for a 1,732-spine omnibus, single-digit
+// KB records for a normal book. Take the ideal when the heap has it and
+// otherwise whatever the largest block gives down to a floor sized for
+// normal books; an omnibus that then overflows the arena fails the build
+// with a clear log and the caller falls back to the in-RAM ladder.
 bool BookPaginator::buildCatalog() {
   constexpr size_t kRecordsIdeal = 96 * 1024;
-  constexpr size_t kRecordsFloor = 76 * 1024;
+  constexpr size_t kRecordsFloor = 16 * 1024;
   constexpr size_t kParseSize = 50 * 1024;
   constexpr size_t kAllocSlack = 64;
 

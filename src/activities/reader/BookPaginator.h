@@ -7,9 +7,13 @@
 //
 // Memory model (ESP32-C3, no PSRAM; the reader sees only ~140 KB free, so
 // nothing is sized for the worst case):
-//   book arena    exact-sized: open() parses into a temporary 48 KB arena to
-//                 learn the real footprint (corpus high-water 5-40 KB), then
-//                 re-opens into precisely that many bytes
+//   book arena    the SD-backed BookCatalog's resident tables, exact-sized
+//                 from the catalog footer (a few KB for a normal book,
+//                 ~42 KB for a 1,732-spine omnibus). Reopens skip the
+//                 container parse entirely. Only when the one-time catalog
+//                 build fails does open() fall back to the legacy in-RAM
+//                 Book: probe-parse into a temporary arena to learn the real
+//                 footprint, then re-open into precisely that many bytes
 //   stylesheet    compacted to the actual rule array (typically < 2 KB)
 //   index arena   12 KB  current chapter's page index + anchor table
 //   page arena    12 KB  decoded runs of the page being rendered
@@ -63,8 +67,9 @@ class BookPaginator {
   // Container lookups (image probes, internal links) -- the in-RAM catalog or
   // the SD-backed one, whichever this book opened with.
   const freeink::book::ZipCatalog& zip() const { return catalogMode_ ? catalog_.zip() : book_.zip(); }
-  // True when the book outgrew the in-RAM probe ladder and runs on the
-  // SD-backed BookCatalog (webnovel omnibuses).
+  // True when the book runs on the SD-backed BookCatalog -- the default for
+  // every EPUB; false only after a catalog build failure forced the legacy
+  // in-RAM fallback.
   bool isCatalogMode() const { return catalogMode_; }
   size_t spineCount() const {
     if (isTxt_) return 1;
@@ -192,10 +197,10 @@ class BookPaginator {
   uint32_t fontFingerprint() const;
   // Uncompressed bytes of a spine item -- the whole-book progress weights.
   uint32_t spineSizeAt(size_t spineIndex) const;
-  // SD-backed catalog path (omnibuses whose container outgrows the probe
-  // ladder): open an existing catalog.fibc / build one. openCatalog removes
-  // a stale index (changed container) and returns false so the caller can
-  // rebuild; buildCatalog expects the framebuffer already lent.
+  // SD-backed catalog path (the default open path for every EPUB): open an
+  // existing catalog.fibc / build one. openCatalog removes a stale index
+  // (changed container) and returns false so the caller can rebuild;
+  // buildCatalog expects the framebuffer already lent.
   bool openCatalog();
   bool buildCatalog();
   // Builds + compacts the book stylesheet (CSS items from whichever catalog).
@@ -215,8 +220,8 @@ class BookPaginator {
 
   SdBookSource source_;
   SdCacheStorage cache_;
-  freeink::book::Book book_;
-  freeink::book::BookCatalog catalog_;  // SD-backed container index (omnibuses)
+  freeink::book::Book book_;            // legacy in-RAM fallback (catalog build failed)
+  freeink::book::BookCatalog catalog_;  // SD-backed container index (default)
   freeink::book::LayoutParams params_;
   freeink::book::PageCacheReader reader_;
   freeink::book::FontChain chain_;
