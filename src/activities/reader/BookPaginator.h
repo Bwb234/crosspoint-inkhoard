@@ -5,15 +5,19 @@
 // half of the reader; EpubReaderActivity keeps the UI half (input, menus,
 // status bar, refresh cadence) and talks to the engine only through this.
 //
-// Memory model (ESP32-C3, no PSRAM — all buffers heap-allocated once in
-// open() and freed in close()):
-//   book arena   64 KB  ZIP catalog + metadata + spine + TOC (corpus
-//                       high-water 5-40 KB; omnibus containers that exceed
-//                       it fail with a clean OutOfMemory)
-//   index arena  16 KB  current chapter's page index + anchor table
-//   page arena   16 KB  decoded runs of the page being rendered
-//   build scratch (transient, ~120 KB) allocated only while a chapter
-//                       (re)paginates — the layout engine's whole working set
+// Memory model (ESP32-C3, no PSRAM; the reader sees only ~140 KB free, so
+// nothing is sized for the worst case):
+//   book arena    exact-sized: open() parses into a temporary 48 KB arena to
+//                 learn the real footprint (corpus high-water 5-40 KB), then
+//                 re-opens into precisely that many bytes
+//   stylesheet    compacted to the actual rule array (typically < 2 KB)
+//   index arena   12 KB  current chapter's page index + anchor table
+//   page arena    12 KB  decoded runs of the page being rendered
+//   open scratch  (transient 64 KB) container parse working set
+//   build scratch (transient, ideally 120 KB, stepping down to 96 KB under
+//                 fragmentation) only while a chapter (re)paginates; the
+//                 index/page arenas are released around it to help the heap
+//                 produce one contiguous block
 // Steady-state page turns touch only the page arena (~2 KB used).
 
 #include <FreeInkBook.h>
@@ -123,9 +127,17 @@ class BookPaginator {
   static constexpr size_t kIndexArenaSize = 12 * 1024;
   static constexpr size_t kPageArenaSize = 12 * 1024;
   static constexpr size_t kSheetArenaSize = 12 * 1024;
+  // Container open: one inflate stream + package parse (~47 KB measured
+  // high-water). Deliberately snug: open needs scratch + the 48 KB temp book
+  // arena simultaneously, and the C3's largest free block hovers just above
+  // 112 KB — 64 KB here made the pair miss fitting by a few dozen bytes.
+  static constexpr size_t kOpenScratchSize = 56 * 1024;
+  // Chapter pagination: layout buffers + inflate + writer index. The ideal
+  // size; ensureChapter steps down when fragmentation denies a block this big.
   static constexpr size_t kBuildScratchSize = 120 * 1024;
 
   bool buildFontChain(GfxRenderer& renderer);
+  bool reallocChapterArenas();
   void loadHyphenator();
   uint32_t fontFingerprint() const;
 
@@ -144,14 +156,13 @@ class BookPaginator {
   freeink::book::Hyphenator hyphenator_;
   std::unique_ptr<uint8_t[]> hyphBlob_;  // SD-loaded patterns (non-English books)
 
-  std::unique_ptr<uint8_t[]> bookBuf_;
-  std::unique_ptr<uint8_t[]> indexBuf_;
-  std::unique_ptr<uint8_t[]> pageBuf_;
-  std::unique_ptr<uint8_t[]> sheetBuf_;
+  std::unique_ptr<uint8_t[]> bookBuf_;   // exact-sized book arena backing
+  std::unique_ptr<uint8_t[]> indexBuf_;  // released transiently around builds
+  std::unique_ptr<uint8_t[]> pageBuf_;   // released transiently around builds
+  std::unique_ptr<uint8_t[]> sheetBuf_;  // compacted CssRule array
   freeink::book::Arena bookArena_;
   freeink::book::Arena indexArena_;
   freeink::book::Arena pageArena_;
-  freeink::book::Arena sheetArena_;
   freeink::book::CssStylesheet sheet_{};
 
   // PageCacheReader borrows this for readPage() — must outlive the reader.

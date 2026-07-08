@@ -20,7 +20,12 @@ class SdBookSource : public freeink::book::BookSource {
     size_ = file_.fileSize64();
     return size_ > 0;
   }
-  void close() { file_.close(); }
+  // HalFile methods assert on a never-opened handle (impl == nullptr), so a
+  // close on a fresh/already-closed source must be a no-op — BookPaginator
+  // calls close() defensively before every open and from its destructor.
+  void close() {
+    if (file_.isOpen()) file_.close();
+  }
   int32_t readAt(uint64_t offset, void* dst, uint32_t len) override {
     if (!file_.isOpen() || !file_.seek64(offset)) return -1;
     return file_.read(dst, len);

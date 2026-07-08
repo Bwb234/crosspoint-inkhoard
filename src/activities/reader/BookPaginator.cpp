@@ -5,6 +5,7 @@
 #include <HalStorage.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <esp_heap_caps.h>
 #include <text/hyph_en_us.h>
 
 #include <cstring>
@@ -57,21 +58,6 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
                          const bool forcePlainText) {
   close();
 
-  bookBuf_ = makeUniqueNoThrow<uint8_t[]>(kBookArenaSize);
-  indexBuf_ = makeUniqueNoThrow<uint8_t[]>(kIndexArenaSize);
-  pageBuf_ = makeUniqueNoThrow<uint8_t[]>(kPageArenaSize);
-  sheetBuf_ = makeUniqueNoThrow<uint8_t[]>(kSheetArenaSize);
-  if (!bookBuf_ || !indexBuf_ || !pageBuf_ || !sheetBuf_) {
-    LOG_ERR("FIB", "OOM: paginator arenas (%u B)",
-            static_cast<unsigned>(kBookArenaSize + kIndexArenaSize + kPageArenaSize + kSheetArenaSize));
-    close();
-    return false;
-  }
-  bookArena_.init(bookBuf_.get(), kBookArenaSize);
-  indexArena_.init(indexBuf_.get(), kIndexArenaSize);
-  pageArena_.init(pageBuf_.get(), kPageArenaSize);
-  sheetArena_.init(sheetBuf_.get(), kSheetArenaSize);
-
   if (!source_.open(path.c_str())) {
     LOG_ERR("FIB", "Cannot open book file: %s", path.c_str());
     close();
@@ -82,37 +68,87 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
   isTxt_ = forcePlainText || (len > 4 && strcasecmp(path.c_str() + len - 4, ".txt") == 0);
 
   if (!isTxt_) {
-    // Container open + book stylesheet need parse scratch; both are
-    // once-per-open, so the big build buffer is borrowed transiently.
-    auto scratchBuf = makeUniqueNoThrow<uint8_t[]>(kBuildScratchSize);
-    if (!scratchBuf) {
-      LOG_ERR("FIB", "OOM: open scratch (%u B)", static_cast<unsigned>(kBuildScratchSize));
+    // The whole book budget must coexist with a ~100+ KB chapter-build
+    // scratch on a heap where the reader sees ~140 KB free, so worst-case
+    // arena sizing is unaffordable. Open in two passes: parse into a
+    // full-size TEMPORARY arena to learn the book's real footprint (corpus
+    // high-water is 5-40 KB against the 48 KB cap), then re-open into an
+    // exactly-sized buffer. The stylesheet is likewise compacted down to its
+    // real rule array. All open-time transients are freed before the
+    // per-chapter arenas are allocated.
+    auto scratchBuf = makeUniqueNoThrow<uint8_t[]>(kOpenScratchSize);
+    auto tempBookBuf = makeUniqueNoThrow<uint8_t[]>(kBookArenaSize);
+    if (!scratchBuf || !tempBookBuf) {
+      LOG_ERR("FIB", "OOM: open working set (%u B, free heap %u)",
+              static_cast<unsigned>(kOpenScratchSize + kBookArenaSize), static_cast<unsigned>(ESP.getFreeHeap()));
       close();
       return false;
     }
-    Arena scratch(scratchBuf.get(), kBuildScratchSize);
+    Arena scratch(scratchBuf.get(), kOpenScratchSize);
+    bookArena_.init(tempBookBuf.get(), kBookArenaSize);
 
-    const BookStatus st = book_.open(source_, bookArena_, scratch);
+    BookStatus st = book_.open(source_, bookArena_, scratch);
     if (st != BookStatus::Ok) {
       LOG_ERR("FIB", "Book open failed: %d (%s)", static_cast<int>(st), path.c_str());
       close();
       return false;
     }
 
-    CssStylesheetBuilder builder;
-    if (builder.begin(sheetArena_)) {
-      for (size_t m = 0; m < book_.manifestCount(); ++m) {
-        const ManifestItem* item = book_.manifestItem(m);
-        if (item == nullptr || item->mediaType == nullptr || strcmp(item->mediaType, "text/css") != 0) continue;
-        if (const freeink::book::ZipEntry* e = book_.zip().find(item->href)) {
-          builder.addSheet(source_, *e, scratch);
+    // Second pass into the exact footprint (+ slack for alignment). The
+    // temporary arena is freed FIRST — the reopen re-parses the container
+    // rather than copying, so peak in-flight stays at scratch + one arena.
+    const size_t bookUsed = bookArena_.used();
+    tempBookBuf.reset();
+    book_ = freeink::book::Book();
+    bookBuf_ = makeUniqueNoThrow<uint8_t[]>(bookUsed + 128);
+    if (!bookBuf_) {
+      LOG_ERR("FIB", "OOM: book arena reopen (%u B)", static_cast<unsigned>(bookUsed + 128));
+      close();
+      return false;
+    }
+    bookArena_.init(bookBuf_.get(), bookUsed + 128);
+    st = book_.open(source_, bookArena_, scratch);
+    if (st != BookStatus::Ok) {
+      LOG_ERR("FIB", "Exact-size reopen failed: %d", static_cast<int>(st));
+      close();
+      return false;
+    }
+
+    // Stylesheet: build in a temporary working arena, keep only the rules.
+    auto tempSheetBuf = makeUniqueNoThrow<uint8_t[]>(kSheetArenaSize);
+    if (tempSheetBuf) {
+      Arena sheetArena(tempSheetBuf.get(), kSheetArenaSize);
+      CssStylesheetBuilder builder;
+      if (builder.begin(sheetArena)) {
+        for (size_t m = 0; m < book_.manifestCount(); ++m) {
+          const ManifestItem* item = book_.manifestItem(m);
+          if (item == nullptr || item->mediaType == nullptr || strcmp(item->mediaType, "text/css") != 0) continue;
+          if (const freeink::book::ZipEntry* e = book_.zip().find(item->href)) {
+            builder.addSheet(source_, *e, scratch);
+          }
+        }
+        sheet_ = builder.finish();
+        if (builder.skippedSheets() > 0) {
+          LOG_INF("FIB", "%u stylesheet(s) skipped (size cap)", builder.skippedSheets());
+        }
+        if (sheet_.ruleCount > 0) {
+          // CssRule is self-contained (name hashes + POD declaration), so the
+          // rule array can move out of the 12 KB working arena wholesale.
+          const size_t rulesBytes = sheet_.ruleCount * sizeof(freeink::book::CssRule);
+          sheetBuf_ = makeUniqueNoThrow<uint8_t[]>(rulesBytes);
+          if (sheetBuf_) {
+            memcpy(sheetBuf_.get(), sheet_.rules, rulesBytes);
+            sheet_.rules = reinterpret_cast<const freeink::book::CssRule*>(sheetBuf_.get());
+          } else {
+            sheet_ = freeink::book::CssStylesheet{};  // OOM: lay out with element defaults
+          }
         }
       }
-      sheet_ = builder.finish();
-      if (builder.skippedSheets() > 0) {
-        LOG_INF("FIB", "%u stylesheet(s) skipped (size cap)", builder.skippedSheets());
-      }
     }
+
+    LOG_INF("FIB", "Book open: %u spine items, book arena %u B (exact), %u CSS rules, free heap %u",
+            static_cast<unsigned>(book_.spineCount()), static_cast<unsigned>(bookUsed), sheet_.ruleCount,
+            static_cast<unsigned>(ESP.getFreeHeap()));
   }
 
   cache_.setDir(cacheDir.c_str());
@@ -123,9 +159,13 @@ bool BookPaginator::open(const std::string& path, const std::string& cacheDir, G
   }
   loadHyphenator();
 
+  // Per-chapter arenas last, once the open-time transients are gone.
+  if (!reallocChapterArenas()) {
+    close();
+    return false;
+  }
+
   open_ = true;
-  LOG_DBG("FIB", "Book open: %u spine items, book arena %u/%u B", static_cast<unsigned>(spineCount()),
-          static_cast<unsigned>(bookArena_.used()), static_cast<unsigned>(kBookArenaSize));
   return true;
 }
 
@@ -261,6 +301,23 @@ void BookPaginator::configureLayout(const int16_t pageWidth, const int16_t pageH
   }
 }
 
+// (Re)allocates the per-chapter arenas released around a build's big scratch
+// block. On failure the paginator stays book-open but chapter-less: callers
+// see chapterReady() == false and surface the error.
+bool BookPaginator::reallocChapterArenas() {
+  if (!indexBuf_) indexBuf_ = makeUniqueNoThrow<uint8_t[]>(kIndexArenaSize);
+  if (!pageBuf_) pageBuf_ = makeUniqueNoThrow<uint8_t[]>(kPageArenaSize);
+  if (!indexBuf_ || !pageBuf_) {
+    LOG_ERR("FIB", "OOM: chapter arenas (%u B)", static_cast<unsigned>(kIndexArenaSize + kPageArenaSize));
+    indexBuf_.reset();
+    pageBuf_.reset();
+    return false;
+  }
+  indexArena_.init(indexBuf_.get(), kIndexArenaSize);
+  pageArena_.init(pageBuf_.get(), kPageArenaSize);
+  return true;
+}
+
 uint32_t BookPaginator::fontFingerprint() const {
   uint32_t hash = 2166136261u;
   for (uint8_t i = 0; i < ladderCount_; ++i) {
@@ -292,35 +349,80 @@ freeink::book::BookStatus BookPaginator::ensureChapter(const uint16_t spineIndex
   if (isTxt_ && spineIndex != 0) return BookStatus::NotFound;
 
   // The pagination working set (layout buffers + one inflate stream + the
-  // writer's page index) lives only for this call.
-  auto scratchBuf = makeUniqueNoThrow<uint8_t[]>(kBuildScratchSize);
+  // writer's page index) lives only for this call — but it needs one big
+  // CONTIGUOUS block, and everything else the parse touches does NOT come
+  // from this arena: expat's internal pools allocate from the system heap.
+  // Grabbing the largest possible block starved exactly that — the heap
+  // dipped to ~6 KB mid-parse and a failed expat malloc surfaces as a bogus
+  // ParseError. So size adaptively: as much as available AFTER a reserve for
+  // the parser's heap use, capped at the ideal, floored at what an ordinary
+  // text chapter needs. Free the idle per-chapter arenas first so their
+  // space can coalesce into the block.
+  reader_ = freeink::book::PageCacheReader();
+  indexBuf_.reset();
+  pageBuf_.reset();
+
+  // Expat pools + misc system-heap use during the parse. Measured on device:
+  // a 28 KB reserve bottomed out at ~8-10 KB free mid-build, so ~19 KB is
+  // real parser use; 36 KB keeps a comfortable floor without starving the
+  // scratch (typical chapters use ~76 KB of it).
+  constexpr size_t kParserHeapReserve = 36 * 1024;
+  constexpr size_t kScratchFloor = 88 * 1024;       // text-chapter working set + writer index
+
+  const size_t freeHeap = ESP.getFreeHeap();
+  const size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  size_t scratchSize = kBuildScratchSize;
+  if (freeHeap > kParserHeapReserve && freeHeap - kParserHeapReserve < scratchSize) {
+    scratchSize = freeHeap - kParserHeapReserve;
+  }
+  if (largestBlock > 64 && largestBlock - 64 < scratchSize) {  // allocator header slack
+    scratchSize = largestBlock - 64;
+  }
+  std::unique_ptr<uint8_t[]> scratchBuf;
+  if (scratchSize >= kScratchFloor) {
+    scratchBuf = makeUniqueNoThrow<uint8_t[]>(scratchSize);
+  }
   if (!scratchBuf) {
-    LOG_ERR("FIB", "OOM: build scratch (%u B, free heap %u)", static_cast<unsigned>(kBuildScratchSize),
-            static_cast<unsigned>(ESP.getFreeHeap()));
+    LOG_ERR("FIB", "OOM: build scratch (want >= %u B, free heap %u, max block %u)",
+            static_cast<unsigned>(kScratchFloor), static_cast<unsigned>(freeHeap), static_cast<unsigned>(largestBlock));
+    reallocChapterArenas();  // restore the per-chapter arenas for the caller
     return BookStatus::OutOfMemory;
   }
-  Arena scratch(scratchBuf.get(), kBuildScratchSize);
+  if (scratchSize != kBuildScratchSize) {
+    LOG_INF("FIB", "Build scratch sized to %u B (free heap %u, max block %u)", static_cast<unsigned>(scratchSize),
+            static_cast<unsigned>(freeHeap), static_cast<unsigned>(largestBlock));
+  }
+  Arena scratch(scratchBuf.get(), scratchSize);
 
   const uint32_t t0 = millis();
-  PageCacheWriter writer;
-  if (!writer.begin(cache_, cacheName_, gen, scratch)) {
-    return BookStatus::IoError;
-  }
+  {
+    PageCacheWriter writer;
+    if (!writer.begin(cache_, cacheName_, gen, scratch)) {
+      scratchBuf.reset();
+      reallocChapterArenas();
+      return BookStatus::IoError;
+    }
 
-  ProgressSink sink(writer, progress);
-  uint32_t totalChars = 0;
-  st = isTxt_ ? ChapterLayout::layoutPlainText(source_, params_, scratch, sink, nullptr, &totalChars)
-              : ChapterLayout::layout(source_, book_.zip(), *entry, item->href, params_, scratch, sink, nullptr,
-                                      &totalChars);
-  writer.setTotalChars(totalChars);
-  if (st == BookStatus::Ok && !writer.finish()) st = BookStatus::IoError;
-  if (st != BookStatus::Ok) {
-    LOG_ERR("FIB", "Chapter %u layout failed: %d (scratch high water %u B)", spineIndex, static_cast<int>(st),
-            static_cast<unsigned>(scratch.highWater()));
-    return st;
+    ProgressSink sink(writer, progress);
+    uint32_t totalChars = 0;
+    st = isTxt_ ? ChapterLayout::layoutPlainText(source_, params_, scratch, sink, nullptr, &totalChars)
+                : ChapterLayout::layout(source_, book_.zip(), *entry, item->href, params_, scratch, sink, nullptr,
+                                        &totalChars);
+    writer.setTotalChars(totalChars);
+    if (st == BookStatus::Ok && !writer.finish()) st = BookStatus::IoError;
+    if (st != BookStatus::Ok) {
+      LOG_ERR("FIB", "Chapter %u layout failed: %d (scratch high water %u/%u B)", spineIndex, static_cast<int>(st),
+              static_cast<unsigned>(scratch.highWater()), static_cast<unsigned>(scratchSize));
+      scratchBuf.reset();
+      reallocChapterArenas();
+      return st;
+    }
+    LOG_INF("FIB", "Chapter %u paginated: %u pages in %ums (scratch high water %u/%u B, free heap %u)", spineIndex,
+            writer.pageCount(), static_cast<unsigned>(millis() - t0), static_cast<unsigned>(scratch.highWater()),
+            static_cast<unsigned>(scratchSize), static_cast<unsigned>(ESP.getFreeHeap()));
   }
-  LOG_INF("FIB", "Chapter %u paginated: %u pages in %ums (scratch high water %u B)", spineIndex, writer.pageCount(),
-          static_cast<unsigned>(millis() - t0), static_cast<unsigned>(scratch.highWater()));
+  scratchBuf.reset();
+  if (!reallocChapterArenas()) return BookStatus::OutOfMemory;
 
   indexArena_.reset();
   st = reader_.open(cache_, cacheName_, gen, indexArena_);
@@ -334,6 +436,9 @@ bool BookPaginator::charForAnchor(const char* fragment, uint32_t* charOut) const
 }
 
 freeink::book::BookStatus BookPaginator::readPage(const uint32_t pageIndex, freeink::book::Page* out) {
+  // pageBuf_ is released transiently around chapter builds; a null here means
+  // a failed reallocation (the arena would point at freed memory).
+  if (curSpine_ == kNoSpine || !pageBuf_) return BookStatus::NotFound;
   pageArena_.reset();
   return reader_.readPage(pageIndex, pageArena_, out);
 }
