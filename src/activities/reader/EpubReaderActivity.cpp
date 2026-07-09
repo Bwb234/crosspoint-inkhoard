@@ -939,6 +939,15 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
   };
 
+  // A section build failure (e.g. an invalid/corrupt EPUB that fails XML parsing) leaves the
+  // "Indexing" popup on screen with no way forward. Surface an explicit error instead of hanging.
+  // clearScreen first so the error popup doesn't overlay the stale "Indexing" popup.
+  const auto showBuildError = [this]() {
+    renderer.clearScreen();
+    GUI.drawPopup(renderer, tr(STR_INDEX_FAILED));
+    automaticPageTurnActive = false;
+  };
+
   // edge case handling for sub-zero spine index
   if (currentSpineIndex < 0) {
     currentSpineIndex = 0;
@@ -1086,7 +1095,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
           silentRestartDefrag();
           LOG_ERR("ERS", "Failed to persist page data to SD");
           section.reset();
-          showPendingSyncSaveError();
+          showBuildError();
           return;
         }
       } else {
@@ -1139,7 +1148,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
           silentRestartDefrag();
           LOG_ERR("ERS", "Failed to start section build");
           section.reset();
-          showPendingSyncSaveError();
+          showBuildError();
           return;
         }
         while (!section->isBuildComplete() &&
@@ -1150,7 +1159,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
           if (!section->buildSomeMore(BUILD_PAGES_PER_CHUNK)) {
             LOG_ERR("ERS", "Failed during incremental section build");
             section.reset();
-            showPendingSyncSaveError();
+            showBuildError();
             return;
           }
         }
@@ -1204,7 +1213,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
                              SETTINGS.focusReadingEnabled)) {
       LOG_ERR("ERS", "Failed to start partial extension build");
       section.reset();
-      showPendingSyncSaveError();
+      showBuildError();
       return;
     }
     // Extend until either the target page exists or the build completes.
@@ -1212,7 +1221,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       if (!section->buildSomeMore(BUILD_PAGES_PER_CHUNK)) {
         LOG_ERR("ERS", "Failed during incremental section build");
         section.reset();
-        showPendingSyncSaveError();
+        showBuildError();
         return;
       }
     }
@@ -1223,7 +1232,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       if (!section->buildSomeMore(BUILD_PAGES_PER_CHUNK)) {
         LOG_ERR("ERS", "Failed during incremental section build");
         section.reset();
-        showPendingSyncSaveError();
+        showBuildError();
         return;
       }
     }
@@ -1273,17 +1282,29 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     auto p = section->loadPage(section->currentPage);
     if (!p) {
       LOG_ERR("ERS", "Failed to load page from SD - clearing section cache");
+      automaticPageTurnActive = false;
+      // Retrying rebuilds a transiently corrupt section and usually recovers, but a page that keeps
+      // failing would loop forever on a blank screen, so bound the retries before giving up.
+      const bool giveUp = ++pageLoadRetryCount > MAX_PAGE_LOAD_RETRIES;
       // Abandon (not suspend) any active build BEFORE clearing: clearCache deletes the files,
       // and the destructor's suspend would otherwise commit tables into a deleted handle.
       section->abandonBuild();
       section->clearCache();
       section.reset();
+      if (giveUp) {
+        LOG_ERR("ERS", "Page load retry limit reached, aborting");
+        pageLoadRetryCount = 0;  // Reset so a later user-initiated navigation can try afresh
+        renderer.clearScreen();
+        renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_PAGE_LOAD_ERROR), true, EpdFontFamily::BOLD);
+        renderer.displayBuffer();
+        showPendingSyncSaveError();
+        return;
+      }
       requestUpdate();  // Try again after clearing cache
-                        // TODO: prevent infinite loop if the page keeps failing to load for some reason
-      automaticPageTurnActive = false;
       showPendingSyncSaveError();
       return;
     }
+    pageLoadRetryCount = 0;  // Reset the retry counter once a page loads cleanly
 
     // Collect footnotes from the loaded page
     currentPageFootnotes = std::move(p->footnotes);
