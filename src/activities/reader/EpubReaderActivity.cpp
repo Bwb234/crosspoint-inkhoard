@@ -969,17 +969,15 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     return;
   }
 
-  // Shed the BLE stack before rendering into a starved heap. Everything below —
-  // page deserialization, glyph caching, catch-up build steps — allocates through
-  // throwing paths that abort() on OOM under -fno-exceptions. Field data: with no
-  // shed, a session ground to <2.2 KB free (per-glyph SD fallbacks, no AA, 4.7 s
-  // pages) and then aborted on a tiny vector growth. Freeing BLE returns ~52 KB and
-  // restores a large contiguous block; the lifecycle restarts it behind its heap
-  // gate once the pressure passes.
+  FrameBufferBuildLoan buildLoan(renderer);
+
+  // If BLE leaves the reader below the render floor, lend the framebuffer before
+  // deserializing/loading the page instead of tearing BLE down immediately. The
+  // restore path still frees BLE if the framebuffer cannot be reallocated.
   if (BleHid.isRunning() && ESP.getFreeHeap() < RENDER_MIN_FREE_HEAP) {
-    LOG_ERR("ERS", "Render heap %u below floor %u; freeing BLE RAM", (unsigned)ESP.getFreeHeap(),
+    LOG_INF("ERS", "Render heap %u below floor %u; lending framebuffer", (unsigned)ESP.getFreeHeap(),
             (unsigned)RENDER_MIN_FREE_HEAP);
-    bleinput::stop();
+    buildLoan.release();
   }
 
   const auto showPendingSyncSaveError = [this]() {
@@ -987,8 +985,6 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     pendingSyncSaveError = false;
     GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
   };
-
-  FrameBufferBuildLoan buildLoan(renderer);
 
   // A section build failure (e.g. an invalid/corrupt EPUB that fails XML parsing) leaves the
   // "Indexing" popup on screen with no way forward. Surface an explicit error instead of hanging.
@@ -1639,7 +1635,7 @@ void EpubReaderActivity::renderStatusBar() const {
   }
 
   GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title, 0, textYOffset, true, currentPageBookmarked,
-                    section->isBuilding());
+                    section->isBuilding(), BleHid.isConnected());
 }
 
 void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool savePosition) {

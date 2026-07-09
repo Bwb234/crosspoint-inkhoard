@@ -571,7 +571,22 @@ void loop() {
 
   gpio.update();
   updateBluetoothLifecycle();    // bring BLE up/down for the current activity context
+  static bool lastBleConnected = false;
   BleHid.poll();                 // drive BLE auto-reconnect + key auto-repeat (no-op when BT off)
+  const bool bleConnected = BleHid.isConnected();
+  if (bleConnected && !lastBleConnected) {
+    LOG_INF("BLELC", "connected name=%s heap=%u maxAlloc=%u", BleHid.connectedName(), ESP.getFreeHeap(),
+            ESP.getMaxAllocHeap());
+    if (activityManager.isReaderActivity() && !activityManager.currentKeepsBluetoothAlive()) {
+      activityManager.requestUpdate();
+    }
+  } else if (!bleConnected && lastBleConnected) {
+    LOG_INF("BLELC", "disconnected heap=%u maxAlloc=%u", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    if (activityManager.isReaderActivity() && !activityManager.currentKeepsBluetoothAlive()) {
+      activityManager.requestUpdate();
+    }
+  }
+  lastBleConnected = bleConnected;
   mappedInputManager.pollBle();  // drain BLE keys -> logical-button overlay for this frame
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
 
