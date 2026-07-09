@@ -94,13 +94,21 @@ pio run -t unit-tests
 
 ### Baseline firmware size
 
-Filled after the first clean `pio run -e default` on this machine / CI:
+From green CI on `inkhoard/main` (run
+[29057987363](https://github.com/Bwb234/crosspoint-inkhoard/actions/runs/29057987363),
+2026-07-09), `pio run -e default`:
 
 | Metric | Value |
 | --- | --- |
-| `firmware.bin` size (bytes) | *(pending first green build)* |
+| `firmware.bin` size (bytes) | 5248320 |
+| Flash usage (linker) | 5234477 / 6553600 (~79.9%) |
+| RAM usage (linker) | 101348 / 327680 (~30.9%) |
 | App partition limit | 6553600 |
 | Size check | CI fails if `firmware.bin` exceeds the app partition limit |
+
+Local Windows toolchain install hit a disk-space STOP on first attempt
+(`WinError 112` while unpacking `toolchain-riscv32-esp`). Host unit tests
+still pass locally via CMake (`85/85`). Clean-clone firmware proof is CI.
 
 ## License
 
