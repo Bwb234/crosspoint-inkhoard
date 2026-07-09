@@ -230,7 +230,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
     entries.push_back(OpdsEntry{OpdsEntryType::NAVIGATION, tr(STR_NEXT_PAGE), "", nextUrl, ""});
   }
   if (feedTruncated) {
-    LOG_DBG("OPDS", "Feed truncated to fit memory");
+    LOG_INF("OPDS", "Feed truncated to fit memory");
   }
 
   selectorIndex = 0;

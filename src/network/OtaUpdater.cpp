@@ -156,9 +156,9 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   if (!fetchOk || !flashOk) {
-    LOG_ERR("OTA", "Firmware download failed (flashOk=%d)", flashOk ? 1 : 0);
+    LOG_ERR("OTA", "Firmware install failed (%s)", flashOk ? "download" : "flash write");
     esp_ota_abort(otaHandle);
-    return HTTP_ERROR;
+    return flashOk ? HTTP_ERROR : INTERNAL_UPDATE_ERROR;
   }
 
   esp_err = esp_ota_end(otaHandle);  // verifies the written image

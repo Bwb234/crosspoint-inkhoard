@@ -18,7 +18,7 @@
 #include <SecureClient.h>
 #include <WiFiClient.h>
 
-extern "C" void wolfSSL_Arduino_Serial_Print(const char* const) {}
+extern "C" void wolfSSL_Arduino_Serial_Print(const char* const msg) { LOG_DBG("WOLFSSL", "%s", msg); }
 #endif
 
 namespace {
@@ -160,17 +160,21 @@ HttpDownloader::DownloadError readBodyExact(Client& client, uint8_t* buf, size_t
 // feeds served via a reverse proxy commonly arrive chunked rather than with a
 // Content-Length.
 HttpDownloader::DownloadError readChunkedBody(Client& client, uint8_t* buf, Sink& sink) {
+  std::string line;
+  line.reserve(64);
   for (;;) {
     if (sink.cancelFlag && *sink.cancelFlag) return HttpDownloader::ABORTED;
-    std::string line;
     if (!readLine(client, line, millis() + HTTP_TIMEOUT_MS)) {
       LOG_ERR("HTTP", "wolfSSL chunk size read failed after %zu bytes", sink.downloaded);
       return HttpDownloader::HTTP_ERROR;
     }
-    // Strip any chunk extension (";name=value") before parsing the hex size.
-    const size_t ext = line.find(';');
-    const unsigned long chunkSize =
-        strtoul((ext == std::string::npos ? line : line.substr(0, ext)).c_str(), nullptr, 16);
+    // strtoul stops at the first non-hex char, so any ";ext" suffix is ignored.
+    char* end = nullptr;
+    const unsigned long chunkSize = strtoul(line.c_str(), &end, 16);
+    if (end == line.c_str()) {
+      LOG_ERR("HTTP", "wolfSSL malformed chunk size");
+      return HttpDownloader::HTTP_ERROR;
+    }
     if (chunkSize == 0) {
       // Last chunk: consume optional trailers up to the terminating blank line.
       while (readLine(client, line, millis() + HTTP_TIMEOUT_MS) && !line.empty()) {
@@ -246,18 +250,21 @@ HttpDownloader::DownloadError runGetWolf(const std::string& startUrl, const std:
       if (line.empty()) break;
       const size_t colon = line.find(':');
       if (colon == std::string::npos) continue;
-      std::string name = line.substr(0, colon);
-      std::string value = line.substr(colon + 1);
-      while (!value.empty() && value.front() == ' ') value.erase(value.begin());
-      std::transform(name.begin(), name.end(), name.begin(),
+      std::transform(line.begin(), line.begin() + colon, line.begin(),
                      [](unsigned char c) { return static_cast<char>(tolower(c)); });
-      if (name == "content-length") contentLength = static_cast<size_t>(strtoul(value.c_str(), nullptr, 10));
-      if (name == "location") location = value;
-      if (name == "transfer-encoding") {
-        while (!value.empty() && isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
-        std::transform(value.begin(), value.end(), value.begin(),
-                       [](unsigned char c) { return static_cast<char>(tolower(c)); });
+      const char* value = line.c_str() + colon + 1;
+      while (*value == ' ') ++value;
+      if (line.compare(0, colon, "content-length") == 0) {
+        contentLength = static_cast<size_t>(strtoul(value, nullptr, 10));
+      } else if (line.compare(0, colon, "location") == 0) {
+        location = value;
+      } else if (line.compare(0, colon, "transfer-encoding") == 0) {
         transferEncoding = value;
+        while (!transferEncoding.empty() && isspace(static_cast<unsigned char>(transferEncoding.back()))) {
+          transferEncoding.pop_back();
+        }
+        std::transform(transferEncoding.begin(), transferEncoding.end(), transferEncoding.begin(),
+                       [](unsigned char c) { return static_cast<char>(tolower(c)); });
       }
     }
 

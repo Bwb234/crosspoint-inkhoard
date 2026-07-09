@@ -20,7 +20,8 @@ constexpr char DEVICE_ID[] = "crosspoint-reader";
 // mbedTLS (TLS 1.3 is stubbed out), so requests run over wolfSSL via
 // SecureHttpClient. The handshake still needs working heap; gate on it. wolfSSL's
 // footprint is smaller than mbedTLS's old ~48KB peak, but keep a conservative
-// floor. Check total free heap, not max contiguous block.
+// floor. Check both total free heap and largest contiguous block so fragmented
+// heap does not fall through into a failed TLS allocation path.
 constexpr uint32_t MIN_HEAP_FOR_TLS = 55000;
 
 // Apply the shared KOSync auth headers after begin(). x-auth-* is the native
@@ -37,8 +38,10 @@ void applyAuthHeaders(freeink::SecureHttpClient& http) {
 // True when free heap is too low to risk a TLS handshake.
 bool insufficientHeap() {
   const uint32_t freeHeap = ESP.getFreeHeap();
-  if (freeHeap < MIN_HEAP_FOR_TLS) {
-    LOG_ERR("KOSync", "Insufficient heap for TLS handshake: %u bytes free (need %u)", freeHeap, MIN_HEAP_FOR_TLS);
+  const uint32_t maxAllocHeap = ESP.getMaxAllocHeap();
+  if (freeHeap < MIN_HEAP_FOR_TLS || maxAllocHeap < MIN_HEAP_FOR_TLS) {
+    LOG_ERR("KOSync", "Insufficient heap for TLS handshake: %u bytes free, %u max alloc (need %u)", freeHeap,
+            maxAllocHeap, MIN_HEAP_FOR_TLS);
     return true;
   }
   return false;
