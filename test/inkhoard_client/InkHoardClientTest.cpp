@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -87,10 +88,11 @@ TEST(InkHoardClient, FetchLibraryPageParsesFixture) {
   MockTransport t;
   t.script.push_back({okBody(readFixture("library-page.json"))});
   InkHoardClient client(&t);
-  inkhoard::LibraryPage page;
+  std::unique_ptr<inkhoard::LibraryPage> page;
   const auto o = client.fetchLibraryPage(page);
   ASSERT_EQ(o.result, inkhoard::ClientResult::Ok);
-  EXPECT_EQ(page.itemCount, 20);
+  ASSERT_TRUE(page);
+  EXPECT_EQ(page->itemCount, 20);
   EXPECT_EQ(o.attempts, 1);
   ASSERT_EQ(t.urls.size(), 1u);
   EXPECT_NE(t.urls[0].find("/api/device/v1/library?limit=20"), std::string::npos);
@@ -101,7 +103,7 @@ TEST(InkHoardClient, AuthInvalidNoRetry) {
   t.script.push_back({okBody(readFixture("error-unauthorized.json"), 401)});
   t.script.push_back({okBody(readFixture("library-page.json"))});  // must not be consumed
   InkHoardClient client(&t);
-  inkhoard::LibraryPage page;
+  std::unique_ptr<inkhoard::LibraryPage> page;
   const auto o = client.fetchLibraryPage(page);
   EXPECT_EQ(o.result, inkhoard::ClientResult::AuthInvalid);
   EXPECT_EQ(o.attempts, 1);
@@ -113,7 +115,7 @@ TEST(InkHoardClient, AuthForbiddenNoRetry) {
   MockTransport t;
   t.script.push_back({okBody(readFixture("error-forbidden.json"), 403)});
   InkHoardClient client(&t);
-  inkhoard::LibraryPage page;
+  std::unique_ptr<inkhoard::LibraryPage> page;
   const auto o = client.fetchLibraryPage(page);
   EXPECT_EQ(o.result, inkhoard::ClientResult::AuthForbidden);
   EXPECT_EQ(o.attempts, 1);
@@ -125,7 +127,7 @@ TEST(InkHoardClient, ServerErrorRetriesThrice) {
   t.script.push_back({okBody("{\"error\":\"x\",\"code\":\"server_error\"}", 500)});
   t.script.push_back({okBody("{\"error\":\"x\",\"code\":\"server_error\"}", 500)});
   InkHoardClient client(&t);
-  inkhoard::LibraryPage page;
+  std::unique_ptr<inkhoard::LibraryPage> page;
   const auto o = client.fetchLibraryPage(page);
   EXPECT_EQ(o.result, inkhoard::ClientResult::ServerError);
   EXPECT_EQ(o.attempts, 3);
@@ -137,11 +139,12 @@ TEST(InkHoardClient, TransportErrorRetriesThenOk) {
   t.script.push_back({failTransport()});
   t.script.push_back({okBody(readFixture("library-empty.json"))});
   InkHoardClient client(&t);
-  inkhoard::LibraryPage page;
+  std::unique_ptr<inkhoard::LibraryPage> page;
   const auto o = client.fetchLibraryPage(page);
   EXPECT_EQ(o.result, inkhoard::ClientResult::Ok);
   EXPECT_EQ(o.attempts, 2);
-  EXPECT_EQ(page.itemCount, 0);
+  ASSERT_TRUE(page);
+  EXPECT_EQ(page->itemCount, 0);
 }
 
 TEST(InkHoardClient, TlsErrorRetries) {
@@ -150,7 +153,7 @@ TEST(InkHoardClient, TlsErrorRetries) {
   t.script.push_back({failTls()});
   t.script.push_back({failTls()});
   InkHoardClient client(&t);
-  inkhoard::LibraryPage page;
+  std::unique_ptr<inkhoard::LibraryPage> page;
   const auto o = client.fetchLibraryPage(page);
   EXPECT_EQ(o.result, inkhoard::ClientResult::TlsError);
   EXPECT_EQ(o.attempts, 3);
@@ -161,9 +164,10 @@ TEST(InkHoardClient, SearchAndDetail) {
   t.script.push_back({okBody(readFixture("search-page.json"))});
   t.script.push_back({okBody(readFixture("item-detail.json"))});
   InkHoardClient client(&t);
-  inkhoard::SearchPage search;
+  std::unique_ptr<inkhoard::SearchPage> search;
   ASSERT_EQ(client.search(search, "hello world").result, inkhoard::ClientResult::Ok);
-  EXPECT_EQ(search.itemCount, 2);
+  ASSERT_TRUE(search);
+  EXPECT_EQ(search->itemCount, 2);
   EXPECT_NE(t.urls[0].find("q=hello%20world"), std::string::npos);
 
   inkhoard::CompactItem item;
@@ -188,6 +192,6 @@ TEST(InkHoardClient, OversizeResponse) {
   r.httpCode = 200;
   t.script.push_back({r});
   InkHoardClient client(&t);
-  inkhoard::LibraryPage page;
+  std::unique_ptr<inkhoard::LibraryPage> page;
   EXPECT_EQ(client.fetchLibraryPage(page).result, inkhoard::ClientResult::OversizeResponse);
 }

@@ -119,16 +119,9 @@ void InkHoardLibraryActivity::fetchPage() {
   statusMessage = tr(STR_LOADING);
   requestUpdate(true);
 
-  if (!page) page = std::make_unique<inkhoard::LibraryPage>();
-  if (!page) {
-    mapError(inkhoard::ClientResult::LowMemory);
-    state = State::ERROR;
-    requestUpdate();
-    return;
-  }
-  *page = {};
-  const auto outcome = client.fetchLibraryPage(*page, cursors.currentCursor(), PAGE_ITEMS);
-  if (outcome.result != inkhoard::ClientResult::Ok || !page->valid) {
+  page.reset();  // free prior page before TLS so heap stays above the TLS gate
+  const auto outcome = client.fetchLibraryPage(page, cursors.currentCursor(), PAGE_ITEMS);
+  if (outcome.result != inkhoard::ClientResult::Ok || !page || !page->valid) {
     mapError(outcome.result);
     // Offer offline list when transport fails
     if (failure == inkhoard::UiFailureKind::Transport || failure == inkhoard::UiFailureKind::Server) {

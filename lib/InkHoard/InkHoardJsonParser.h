@@ -17,7 +17,7 @@
  */
 class InkHoardJsonParser {
  public:
-  enum class Kind : uint8_t { LibraryPage, SearchPage, CompactItem, ApiError };
+  enum class Kind : uint8_t { LibraryPage, SearchPage, CompactItem, ApiError, StatusOnly };
 
   InkHoardJsonParser();
   ~InkHoardJsonParser();

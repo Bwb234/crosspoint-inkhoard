@@ -76,6 +76,7 @@ InkHoardClient::Outcome InkHoardClient::performJsonGet(const std::string& pathAn
   constexpr uint8_t MAX_ATTEMPTS = 3;  // initial + 2 retries
   for (uint8_t attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
     outcome.attempts = static_cast<uint8_t>(attempt + 1);
+    // TLS first — do not allocate LibraryPage/SearchPage before this returns.
     const auto resp = transport_->getJson(url, token());
     outcome.httpCode = resp.httpCode;
 
@@ -105,7 +106,39 @@ InkHoardClient::Outcome InkHoardClient::performJsonGet(const std::string& pathAn
     }
 
     if (resp.httpCode == 200) {
-      // Heap-allocate: parser page buffers are large; never stack them on loopTask.
+      // Connection probe: HTTP 200 is enough; skip large page parse.
+      if (kind == InkHoardJsonParser::Kind::StatusOnly) {
+        outcome.result = inkhoard::ClientResult::Ok;
+        return outcome;
+      }
+
+      // Allocate large page outs only after TLS buffers are released.
+      if (kind == InkHoardJsonParser::Kind::LibraryPage) {
+        auto* out = static_cast<std::unique_ptr<inkhoard::LibraryPage>*>(outStruct);
+        if (!out) {
+          outcome.result = inkhoard::ClientResult::BadRequest;
+          return outcome;
+        }
+        if (!*out) *out = std::make_unique<inkhoard::LibraryPage>();
+        if (!*out) {
+          outcome.result = inkhoard::ClientResult::LowMemory;
+          return outcome;
+        }
+        **out = {};
+      } else if (kind == InkHoardJsonParser::Kind::SearchPage) {
+        auto* out = static_cast<std::unique_ptr<inkhoard::SearchPage>*>(outStruct);
+        if (!out) {
+          outcome.result = inkhoard::ClientResult::BadRequest;
+          return outcome;
+        }
+        if (!*out) *out = std::make_unique<inkhoard::SearchPage>();
+        if (!*out) {
+          outcome.result = inkhoard::ClientResult::LowMemory;
+          return outcome;
+        }
+        **out = {};
+      }
+
       auto parser = std::make_unique<InkHoardJsonParser>();
       if (!parser) {
         outcome.result = inkhoard::ClientResult::LowMemory;
@@ -123,15 +156,16 @@ InkHoardClient::Outcome InkHoardClient::performJsonGet(const std::string& pathAn
       }
       switch (kind) {
         case InkHoardJsonParser::Kind::LibraryPage:
-          *static_cast<inkhoard::LibraryPage*>(outStruct) = parser->libraryPage();
+          **static_cast<std::unique_ptr<inkhoard::LibraryPage>*>(outStruct) = parser->libraryPage();
           break;
         case InkHoardJsonParser::Kind::SearchPage:
-          *static_cast<inkhoard::SearchPage*>(outStruct) = parser->searchPage();
+          **static_cast<std::unique_ptr<inkhoard::SearchPage>*>(outStruct) = parser->searchPage();
           break;
         case InkHoardJsonParser::Kind::CompactItem:
           *static_cast<inkhoard::CompactItem*>(outStruct) = parser->item();
           break;
         case InkHoardJsonParser::Kind::ApiError:
+        case InkHoardJsonParser::Kind::StatusOnly:
           break;
       }
       outcome.result = inkhoard::ClientResult::Ok;
@@ -160,17 +194,12 @@ InkHoardClient::Outcome InkHoardClient::performJsonGet(const std::string& pathAn
 }
 
 InkHoardClient::Outcome InkHoardClient::testConnection() {
-  // Heap-allocate page buffer (~45KB) — stack would overflow loopTask.
-  auto page = std::make_unique<inkhoard::LibraryPage>();
-  if (!page) {
-    Outcome o;
-    o.result = inkhoard::ClientResult::LowMemory;
-    return o;
-  }
-  return performJsonGet("/api/device/v1/library?limit=1", InkHoardJsonParser::Kind::LibraryPage, page.get());
+  // Status-only: no LibraryPage allocation before/during TLS (Wi‑Fi leaves ~60KB free).
+  return performJsonGet("/api/device/v1/library?limit=1", InkHoardJsonParser::Kind::StatusOnly, nullptr);
 }
 
-InkHoardClient::Outcome InkHoardClient::fetchLibraryPage(inkhoard::LibraryPage& out, const char* cursor, int limit) {
+InkHoardClient::Outcome InkHoardClient::fetchLibraryPage(std::unique_ptr<inkhoard::LibraryPage>& out,
+                                                         const char* cursor, int limit) {
   if (limit < 1) limit = 1;
   if (limit > static_cast<int>(inkhoard::MAX_PAGE_ITEMS)) limit = static_cast<int>(inkhoard::MAX_PAGE_ITEMS);
   char path[384];
@@ -182,7 +211,8 @@ InkHoardClient::Outcome InkHoardClient::fetchLibraryPage(inkhoard::LibraryPage& 
   return performJsonGet(path, InkHoardJsonParser::Kind::LibraryPage, &out);
 }
 
-InkHoardClient::Outcome InkHoardClient::search(inkhoard::SearchPage& out, const char* query, int offset, int limit) {
+InkHoardClient::Outcome InkHoardClient::search(std::unique_ptr<inkhoard::SearchPage>& out, const char* query,
+                                               int offset, int limit) {
   if (!query || !query[0]) {
     Outcome o;
     o.result = inkhoard::ClientResult::BadRequest;

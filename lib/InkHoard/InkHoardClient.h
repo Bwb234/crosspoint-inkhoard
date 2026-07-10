@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "InkHoardJsonParser.h"
@@ -27,9 +28,16 @@ class InkHoardClient {
 
   void setTransport(inkhoard::InkHoardTransport* transport) { transport_ = transport; }
 
+  /** Auth probe only — does not allocate/parse a LibraryPage (TLS heap budget). */
   Outcome testConnection();
-  Outcome fetchLibraryPage(inkhoard::LibraryPage& out, const char* cursor = nullptr, int limit = 20);
-  Outcome search(inkhoard::SearchPage& out, const char* query, int offset = 0, int limit = 20);
+
+  /**
+   * Fetch a library page. Allocates `out` only AFTER the HTTP/TLS exchange so
+   * the ~45KB page buffer does not starve the TLS heap gate under Wi‑Fi.
+   */
+  Outcome fetchLibraryPage(std::unique_ptr<inkhoard::LibraryPage>& out, const char* cursor = nullptr,
+                           int limit = 20);
+  Outcome search(std::unique_ptr<inkhoard::SearchPage>& out, const char* query, int offset = 0, int limit = 20);
   Outcome fetchItemDetail(inkhoard::CompactItem& out, const char* id);
 
   /**

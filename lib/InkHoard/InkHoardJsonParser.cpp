@@ -64,6 +64,7 @@ bool InkHoardJsonParser::ensurePageBuffers() {
     *search = {};
     library.reset();
   } else {
+    // StatusOnly / CompactItem / ApiError — no page buffers (keeps heap free for TLS).
     library.reset();
     search.reset();
   }
@@ -111,6 +112,8 @@ bool InkHoardJsonParser::ok() const {
       return detail.valid;
     case Kind::ApiError:
       return apiErr.valid;
+    case Kind::StatusOnly:
+      return true;
   }
   return false;
 }
