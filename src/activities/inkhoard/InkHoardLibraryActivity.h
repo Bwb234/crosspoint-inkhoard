@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -40,7 +41,8 @@ class InkHoardLibraryActivity final : public Activity {
   InkHoardClient client;
   InkHoardDownloadManager downloads{&client};
   inkhoard::CursorStack cursors;
-  inkhoard::LibraryPage page{};
+  // Heap: LibraryPage is ~45KB and must not live on the activity/stack frame.
+  std::unique_ptr<inkhoard::LibraryPage> page;
   std::vector<inkhoard::Sidecar> offlineItems;
   int selectorIndex = 0;
   std::string errorMessage;

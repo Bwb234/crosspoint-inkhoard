@@ -51,7 +51,7 @@ void InkHoardLibraryActivity::onEnter() {
   Activity::onEnter();
   downloads.prepareStorage();
   cursors.reset();
-  page = {};
+  page.reset();
   offlineItems.clear();
   selectorIndex = 0;
   errorMessage.clear();
@@ -62,7 +62,7 @@ void InkHoardLibraryActivity::onEnter() {
 
 void InkHoardLibraryActivity::onExit() {
   Activity::onExit();
-  page = {};
+  page.reset();
   offlineItems.clear();
   if (wifiActivated && WiFi.getMode() != WIFI_MODE_NULL) {
     WiFi.disconnect(false);
@@ -119,9 +119,16 @@ void InkHoardLibraryActivity::fetchPage() {
   statusMessage = tr(STR_LOADING);
   requestUpdate(true);
 
-  page = {};
-  const auto outcome = client.fetchLibraryPage(page, cursors.currentCursor(), PAGE_ITEMS);
-  if (outcome.result != inkhoard::ClientResult::Ok || !page.valid) {
+  if (!page) page = std::make_unique<inkhoard::LibraryPage>();
+  if (!page) {
+    mapError(inkhoard::ClientResult::LowMemory);
+    state = State::ERROR;
+    requestUpdate();
+    return;
+  }
+  *page = {};
+  const auto outcome = client.fetchLibraryPage(*page, cursors.currentCursor(), PAGE_ITEMS);
+  if (outcome.result != inkhoard::ClientResult::Ok || !page->valid) {
     mapError(outcome.result);
     // Offer offline list when transport fails
     if (failure == inkhoard::UiFailureKind::Transport || failure == inkhoard::UiFailureKind::Server) {
@@ -156,8 +163,8 @@ void InkHoardLibraryActivity::loadOfflineList() {
 void InkHoardLibraryActivity::openSelected() {
   inkhoard::CompactItem item{};
   if (state == State::BROWSING) {
-    if (page.itemCount == 0 || selectorIndex < 0 || selectorIndex >= page.itemCount) return;
-    item = page.items[selectorIndex];
+    if (!page || page->itemCount == 0 || selectorIndex < 0 || selectorIndex >= page->itemCount) return;
+    item = page->items[selectorIndex];
   } else if (state == State::OFFLINE_LIST) {
     if (offlineItems.empty() || selectorIndex < 0 ||
         static_cast<size_t>(selectorIndex) >= offlineItems.size()) {
@@ -183,8 +190,8 @@ void InkHoardLibraryActivity::openSelected() {
 }
 
 void InkHoardLibraryActivity::goNextPage() {
-  if (!page.hasNextCursor || !page.nextCursor[0]) return;
-  cursors.pushNext(page.nextCursor);
+  if (!page || !page->hasNextCursor || !page->nextCursor[0]) return;
+  cursors.pushNext(page->nextCursor);
   fetchPage();
 }
 
@@ -233,7 +240,7 @@ void InkHoardLibraryActivity::loop() {
   }
 
   if (state == State::BROWSING || state == State::OFFLINE_LIST) {
-    const int count = state == State::BROWSING ? static_cast<int>(page.itemCount)
+    const int count = state == State::BROWSING ? (page ? static_cast<int>(page->itemCount) : 0)
                                                : static_cast<int>(offlineItems.size());
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
@@ -249,7 +256,7 @@ void InkHoardLibraryActivity::loop() {
         goPrevPage();
         return;
       }
-      if (mappedInput.wasReleased(MappedInputManager::Button::Right) && page.hasNextCursor) {
+      if (mappedInput.wasReleased(MappedInputManager::Button::Right) && page && page->hasNextCursor) {
         goNextPage();
         return;
       }
@@ -316,13 +323,13 @@ void InkHoardLibraryActivity::render(RenderLock&&) {
   }
 
   const bool offline = state == State::OFFLINE_LIST;
-  const int count = offline ? static_cast<int>(offlineItems.size()) : static_cast<int>(page.itemCount);
+  const int count = offline ? static_cast<int>(offlineItems.size()) : (page ? static_cast<int>(page->itemCount) : 0);
   const char* confirmLabel = tr(STR_OPEN);
   const char* pageLabel = "";
   if (!offline) {
     if (cursors.canGoPrev())
       pageLabel = tr(STR_PREV_PAGE);
-    else if (page.hasNextCursor)
+    else if (page && page->hasNextCursor)
       pageLabel = tr(STR_NEXT_PAGE);
   } else {
     renderer.drawCenteredText(UI_10_FONT_ID, metrics.topPadding + metrics.headerHeight + 4,
@@ -347,7 +354,7 @@ void InkHoardLibraryActivity::render(RenderLock&&) {
         if (displayText.empty()) displayText = offlineItems[static_cast<size_t>(i)].id;
         isDl = true;
       } else {
-        const auto& it = page.items[i];
+        const auto& it = page->items[i];
         displayText = (!it.titleIsNull && it.title[0]) ? it.title : it.id;
         isDl = downloads.isDownloaded(it.id);
       }

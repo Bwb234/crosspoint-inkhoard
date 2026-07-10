@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include "InkHoardModels.h"
 #include "StreamingJsonParser.h"
@@ -10,12 +11,16 @@
  * Bounded SAX parser for device-api JSON into fixed-size models.
  * Composes StreamingJsonParser (same pattern as ReleaseJsonParser).
  * INKHOARD: plan 008
+ *
+ * LibraryPage/SearchPage live on the heap — they are ~45KB each and must never
+ * be stack-allocated on the ESP32 Arduino loopTask (~8KB).
  */
 class InkHoardJsonParser {
  public:
   enum class Kind : uint8_t { LibraryPage, SearchPage, CompactItem, ApiError };
 
   InkHoardJsonParser();
+  ~InkHoardJsonParser();
 
   InkHoardJsonParser(const InkHoardJsonParser&) = delete;
   InkHoardJsonParser& operator=(const InkHoardJsonParser&) = delete;
@@ -27,8 +32,8 @@ class InkHoardJsonParser {
   bool isOversize() const { return oversize; }
   size_t bytesSeen() const { return totalBytes; }
 
-  const inkhoard::LibraryPage& libraryPage() const { return library; }
-  const inkhoard::SearchPage& searchPage() const { return search; }
+  const inkhoard::LibraryPage& libraryPage() const;
+  const inkhoard::SearchPage& searchPage() const;
   const inkhoard::CompactItem& item() const { return detail; }
   const inkhoard::ApiError& apiError() const { return apiErr; }
 
@@ -90,6 +95,7 @@ class InkHoardJsonParser {
   void copyField(char* dest, size_t destCap, const char* src, size_t len);
   inkhoard::CompactItem* currentItem();
   void finishItem();
+  bool ensurePageBuffers();
 
   StreamingJsonParser parser;
   Kind kind = Kind::LibraryPage;
@@ -103,8 +109,8 @@ class InkHoardJsonParser {
   bool itemsSeen = false;
   bool skippingExtraItem = false;
 
-  inkhoard::LibraryPage library;
-  inkhoard::SearchPage search;
+  std::unique_ptr<inkhoard::LibraryPage> library;
+  std::unique_ptr<inkhoard::SearchPage> search;
   inkhoard::CompactItem detail;
   inkhoard::ApiError apiErr;
   inkhoard::CompactItem scratchItem;

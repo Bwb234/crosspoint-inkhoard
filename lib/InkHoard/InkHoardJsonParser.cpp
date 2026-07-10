@@ -46,6 +46,40 @@ InkHoardJsonParser::InkHoardJsonParser()
   reset(Kind::LibraryPage);
 }
 
+InkHoardJsonParser::~InkHoardJsonParser() = default;
+
+bool InkHoardJsonParser::ensurePageBuffers() {
+  if (kind == Kind::LibraryPage) {
+    if (!library) {
+      library = std::make_unique<inkhoard::LibraryPage>();
+      if (!library) return false;
+    }
+    *library = {};
+    search.reset();
+  } else if (kind == Kind::SearchPage) {
+    if (!search) {
+      search = std::make_unique<inkhoard::SearchPage>();
+      if (!search) return false;
+    }
+    *search = {};
+    library.reset();
+  } else {
+    library.reset();
+    search.reset();
+  }
+  return true;
+}
+
+const inkhoard::LibraryPage& InkHoardJsonParser::libraryPage() const {
+  static const inkhoard::LibraryPage kEmpty{};
+  return library ? *library : kEmpty;
+}
+
+const inkhoard::SearchPage& InkHoardJsonParser::searchPage() const {
+  static const inkhoard::SearchPage kEmpty{};
+  return search ? *search : kEmpty;
+}
+
 void InkHoardJsonParser::reset(Kind k) {
   kind = k;
   position = Position::TOP;
@@ -57,11 +91,12 @@ void InkHoardJsonParser::reset(Kind k) {
   totalBytes = 0;
   itemsSeen = false;
   skippingExtraItem = false;
-  library = {};
-  search = {};
   detail = {};
   apiErr = {};
   scratchItem = {};
+  if (!ensurePageBuffers()) {
+    error = true;
+  }
   parser.reset();
 }
 
@@ -69,9 +104,9 @@ bool InkHoardJsonParser::ok() const {
   if (hasError()) return false;
   switch (kind) {
     case Kind::LibraryPage:
-      return library.valid;
+      return library && library->valid;
     case Kind::SearchPage:
-      return search.valid;
+      return search && search->valid;
     case Kind::CompactItem:
       return detail.valid;
     case Kind::ApiError:
@@ -113,13 +148,13 @@ void InkHoardJsonParser::finishItem() {
   scratchItem.valid = scratchItem.id[0] != '\0';
   if (!scratchItem.valid) return;
 
-  if (kind == Kind::LibraryPage) {
-    if (library.itemCount < inkhoard::MAX_PAGE_ITEMS) {
-      library.items[library.itemCount++] = scratchItem;
+  if (kind == Kind::LibraryPage && library) {
+    if (library->itemCount < inkhoard::MAX_PAGE_ITEMS) {
+      library->items[library->itemCount++] = scratchItem;
     }
-  } else if (kind == Kind::SearchPage) {
-    if (search.itemCount < inkhoard::MAX_PAGE_ITEMS) {
-      search.items[search.itemCount++] = scratchItem;
+  } else if (kind == Kind::SearchPage && search) {
+    if (search->itemCount < inkhoard::MAX_PAGE_ITEMS) {
+      search->items[search->itemCount++] = scratchItem;
     }
   }
   scratchItem = {};
@@ -244,26 +279,26 @@ void InkHoardJsonParser::onString(const char* value, size_t len) {
   }
 
   if (position == Position::TOP) {
-    if (lastKey == LastKey::NEXT_CURSOR && kind == Kind::LibraryPage) {
-      copyField(library.nextCursor, sizeof(library.nextCursor), value, len);
-      library.hasNextCursor = library.nextCursor[0] != '\0';
+    if (lastKey == LastKey::NEXT_CURSOR && kind == Kind::LibraryPage && library) {
+      copyField(library->nextCursor, sizeof(library->nextCursor), value, len);
+      library->hasNextCursor = library->nextCursor[0] != '\0';
     }
   }
   lastKey = LastKey::NONE;
 }
 
 void InkHoardJsonParser::onNumber(const char* value, size_t len) {
-  if (position == Position::TOP && kind == Kind::SearchPage) {
-    if (lastKey == LastKey::LIMIT) search.limit = parseInt(value, len);
-    if (lastKey == LastKey::OFFSET) search.offset = parseInt(value, len);
+  if (position == Position::TOP && kind == Kind::SearchPage && search) {
+    if (lastKey == LastKey::LIMIT) search->limit = parseInt(value, len);
+    if (lastKey == LastKey::OFFSET) search->offset = parseInt(value, len);
   }
   lastKey = LastKey::NONE;
 }
 
 void InkHoardJsonParser::onBool(bool value) {
   if (lastKey == LastKey::HAS_MORE && position == Position::TOP) {
-    if (kind == Kind::LibraryPage) library.hasMore = value;
-    if (kind == Kind::SearchPage) search.hasMore = value;
+    if (kind == Kind::LibraryPage && library) library->hasMore = value;
+    if (kind == Kind::SearchPage && search) search->hasMore = value;
   } else if (lastKey == LastKey::EPUB_AVAILABLE) {
     if (auto* item = currentItem()) item->epubAvailable = value;
   }
@@ -276,9 +311,9 @@ void InkHoardJsonParser::onNull() {
       item->title[0] = '\0';
       item->titleIsNull = true;
     }
-  } else if (lastKey == LastKey::NEXT_CURSOR && kind == Kind::LibraryPage) {
-    library.nextCursor[0] = '\0';
-    library.hasNextCursor = false;
+  } else if (lastKey == LastKey::NEXT_CURSOR && kind == Kind::LibraryPage && library) {
+    library->nextCursor[0] = '\0';
+    library->hasNextCursor = false;
   }
   lastKey = LastKey::NONE;
 }
@@ -297,7 +332,9 @@ void InkHoardJsonParser::onObjectStart() {
   }
   if (position == Position::IN_ITEMS) {
     // Starting a new item object
-    const uint8_t count = (kind == Kind::LibraryPage) ? library.itemCount : search.itemCount;
+    const uint8_t count = (kind == Kind::LibraryPage && library)   ? library->itemCount
+                          : (kind == Kind::SearchPage && search) ? search->itemCount
+                                                                 : inkhoard::MAX_PAGE_ITEMS;
     if (count >= inkhoard::MAX_PAGE_ITEMS) {
       skippingExtraItem = true;
     } else {
@@ -320,8 +357,8 @@ void InkHoardJsonParser::onObjectEnd() {
   } else if (position == Position::IN_ERROR_OBJ && depth == 1) {
     position = Position::TOP;
   } else if (depth == 1 && (kind == Kind::LibraryPage || kind == Kind::SearchPage)) {
-    if (kind == Kind::LibraryPage) library.valid = itemsSeen;
-    if (kind == Kind::SearchPage) search.valid = itemsSeen;
+    if (kind == Kind::LibraryPage && library) library->valid = itemsSeen;
+    if (kind == Kind::SearchPage && search) search->valid = itemsSeen;
   }
   if (depth > 0) depth--;
   lastKey = LastKey::NONE;

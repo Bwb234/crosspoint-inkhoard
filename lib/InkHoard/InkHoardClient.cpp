@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 #ifdef ARDUINO
 #include <Logging.h>
@@ -104,26 +105,31 @@ InkHoardClient::Outcome InkHoardClient::performJsonGet(const std::string& pathAn
     }
 
     if (resp.httpCode == 200) {
-      InkHoardJsonParser parser;
-      parser.reset(kind);
-      parser.feed(resp.body.data(), resp.body.size());
-      if (parser.isOversize()) {
+      // Heap-allocate: parser page buffers are large; never stack them on loopTask.
+      auto parser = std::make_unique<InkHoardJsonParser>();
+      if (!parser) {
+        outcome.result = inkhoard::ClientResult::LowMemory;
+        return outcome;
+      }
+      parser->reset(kind);
+      parser->feed(resp.body.data(), resp.body.size());
+      if (parser->isOversize()) {
         outcome.result = inkhoard::ClientResult::OversizeResponse;
         return outcome;
       }
-      if (!parser.ok()) {
+      if (!parser->ok()) {
         outcome.result = inkhoard::ClientResult::ParseError;
         return outcome;
       }
       switch (kind) {
         case InkHoardJsonParser::Kind::LibraryPage:
-          *static_cast<inkhoard::LibraryPage*>(outStruct) = parser.libraryPage();
+          *static_cast<inkhoard::LibraryPage*>(outStruct) = parser->libraryPage();
           break;
         case InkHoardJsonParser::Kind::SearchPage:
-          *static_cast<inkhoard::SearchPage*>(outStruct) = parser.searchPage();
+          *static_cast<inkhoard::SearchPage*>(outStruct) = parser->searchPage();
           break;
         case InkHoardJsonParser::Kind::CompactItem:
-          *static_cast<inkhoard::CompactItem*>(outStruct) = parser.item();
+          *static_cast<inkhoard::CompactItem*>(outStruct) = parser->item();
           break;
         case InkHoardJsonParser::Kind::ApiError:
           break;
@@ -133,11 +139,13 @@ InkHoardClient::Outcome InkHoardClient::performJsonGet(const std::string& pathAn
     }
 
     if (!resp.body.empty()) {
-      InkHoardJsonParser errParser;
-      errParser.reset(InkHoardJsonParser::Kind::ApiError);
-      errParser.feed(resp.body.data(), resp.body.size());
-      if (errParser.ok()) {
-        outcome.error = errParser.apiError();
+      auto errParser = std::make_unique<InkHoardJsonParser>();
+      if (errParser) {
+        errParser->reset(InkHoardJsonParser::Kind::ApiError);
+        errParser->feed(resp.body.data(), resp.body.size());
+        if (errParser->ok()) {
+          outcome.error = errParser->apiError();
+        }
       }
     }
     outcome.result = inkhoard::mapHttpStatus(resp.httpCode, outcome.error.code);
@@ -152,8 +160,14 @@ InkHoardClient::Outcome InkHoardClient::performJsonGet(const std::string& pathAn
 }
 
 InkHoardClient::Outcome InkHoardClient::testConnection() {
-  inkhoard::LibraryPage page;
-  return performJsonGet("/api/device/v1/library?limit=1", InkHoardJsonParser::Kind::LibraryPage, &page);
+  // Heap-allocate page buffer (~45KB) — stack would overflow loopTask.
+  auto page = std::make_unique<inkhoard::LibraryPage>();
+  if (!page) {
+    Outcome o;
+    o.result = inkhoard::ClientResult::LowMemory;
+    return o;
+  }
+  return performJsonGet("/api/device/v1/library?limit=1", InkHoardJsonParser::Kind::LibraryPage, page.get());
 }
 
 InkHoardClient::Outcome InkHoardClient::fetchLibraryPage(inkhoard::LibraryPage& out, const char* cursor, int limit) {
