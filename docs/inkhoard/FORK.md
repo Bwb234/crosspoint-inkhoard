@@ -60,6 +60,11 @@ upstream instead of accumulating in the fork.
 Fork-local (not shared): `lib/InkHoard/*`, `src/activities/settings/InkHoard*.{h,cpp}`,
 `test/inkhoard_credential_logic/*`.
 
+**Plan 007 size delta** (CI run
+[29060825109](https://github.com/Bwb234/crosspoint-inkhoard/actions/runs/29060825109)):
+`firmware.bin` **5,263,344** bytes (+15,024 vs plan 005 baseline 5,248,320); still under
+6,553,600 app partition limit. Flash linker ~80.1% / RAM ~31.0%.
+
 ## Version Scheme
 
 `<upstream-version>+inkhoard.<n>`
