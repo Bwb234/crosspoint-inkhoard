@@ -55,18 +55,29 @@ upstream instead of accumulating in the fork.
 | `src/network/CrossPointWebServer.h` | `/api/inkhoard` handlers | 007 |
 | `src/network/CrossPointWebServer.cpp` | Credential GET/POST/delete (`hasToken` only) | 007 |
 | `src/network/html/SettingsPage.html` (+ generated) | Web UI for InkHoard credentials | 007 |
-| `test/CMakeLists.txt` | Host tests for credential logic / JSON / client | 007, 008 |
+| `test/CMakeLists.txt` | Host tests for credential logic / JSON / client / download paths | 007, 008, 009 |
 | `src/network/HttpDownloader.h` | Generic `RequestOptions` (headers, status, accept) | 008 |
 | `src/network/HttpDownloader.cpp` | Wire `RequestOptions`; 304 no-body path | 008 |
 | `lib/JsonParser/StreamingJsonParser.h` | `TOKEN_BUF_SIZE` 512 → 1025 (url ≤ 1024) | 008 |
+| `src/activities/ActivityManager.h` | `HomeMenuItem::INKHOARD`, `goToInkHoard()` | 009 |
+| `src/activities/ActivityManager.cpp` | Launch `InkHoardLibraryActivity`; home restore | 009 |
+| `src/activities/home/HomeActivity.h` | Menu index mapping for InkHoard | 009 |
+| `src/activities/home/HomeActivity.cpp` | Home menu entry + icon | 009 |
+| `lib/I18n/translations/english.yaml` (+ generated I18n*) | Browse/download/offline strings | 009 |
 
-Fork-local (not shared): `lib/InkHoard/*`, `src/activities/settings/InkHoard*.{h,cpp}`,
+Fork-local (not shared): `lib/InkHoard/*`, `src/inkhoard/*`,
+`src/activities/inkhoard/*`, `src/activities/settings/InkHoard*.{h,cpp}`,
 `test/inkhoard_*`, `test/fixtures/device-api/*`.
 
 **Plan 007 size delta** (CI run
 [29060825109](https://github.com/Bwb234/crosspoint-inkhoard/actions/runs/29060825109)):
 `firmware.bin` **5,263,344** bytes (+15,024 vs plan 005 baseline 5,248,320); still under
 6,553,600 app partition limit. Flash linker ~80.1% / RAM ~31.0%.
+
+**Plan 009 local build** (`inkhoard/009-vertical-slice`, 2026-07-09):
+`firmware.bin` **5,300,592** bytes (SHA256
+`AFF2DE486325A4FC8B3B8F3AB108FEDC57CA36FB7198D3848983AB59DCFDAF61`);
+Flash linker ~80.7% / RAM ~31.0%; still under 6,553,600 app partition.
 
 ## Version Scheme
 

@@ -92,7 +92,35 @@ above the gate. Plans 008/009 should budget against ~60 KB network floor and
 | Token leak | Boot serial capture: **no** `ink_dev_` substring |
 | Interactive connection-test states | Operator: Settings → System → InkHoard (URL/token/test/clear). Automated host cannot drive the e-ink UI. |
 
+## Plan 008 — HTTP client / EPUB download (2026-07-09)
+
+| Item | Result |
+| --- | --- |
+| CI fix | `downloadEpub` moved to `src/inkhoard/InkHoardClientEpub.cpp` so `HttpDownloader` is visible (lib/ could not include `src/network`) |
+| Host tests | InkHoard client + download-path suites green locally |
+| Live ~1 MB EPUB heap | Deferred to plan 009 MVP checkpoint (same download path) |
+
+## Plan 009 — MVP vertical slice (firmware landed; HW soak pending)
+
+Local `pio run -e default` on `inkhoard/009-vertical-slice`: **5,300,592** bytes;
+SHA256 `AFF2DE486325A4FC8B3B8F3AB108FEDC57CA36FB7198D3848983AB59DCFDAF61`.
+
+### MVP hardware checklist (operator)
+
+- [ ] Credentials → connection test OK
+- [ ] Browse ≥ 25 items across pages; heap stable across 10 page flips
+- [ ] Download small + multi-MB EPUB; open in reader (images)
+- [ ] Kill Wi‑Fi mid-download → clean failure; no partial in `items/`; Retry OK
+- [ ] Reboot Wi‑Fi off → Downloaded list + open both
+- [ ] Re-download already-downloaded item → atomic replace still opens
+- [ ] Revoke token → 401 UI → Settings
+- [ ] 50-open soak: no watchdog; log first/last free-heap
+
+Record heap figures here when the checklist is exercised.
+
 ## Status
 
 **DONE** — hardware decision gate cleared for firmware feature work (007+).
-Plan 007 flash/boot smoke recorded above. OTA install/rollback left for plan 014.
+Plan 007 flash/boot smoke recorded above. Plan 008 CI/size closed; plan 009
+firmware implemented — MVP soak checklist above still open. OTA install/rollback
+left for plan 014.
