@@ -13,6 +13,7 @@
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
 #include "home/RecentBooksActivity.h"
+#include "inkhoard/InkHoardLibraryActivity.h"  // INKHOARD: plan 009
 #include "network/CrossPointWebServerActivity.h"
 #include "reader/ReaderActivity.h"
 #include "settings/OpdsServerListActivity.h"
@@ -195,6 +196,10 @@ void ActivityManager::goToBrowser() {
   }
 }
 
+void ActivityManager::goToInkHoard() {  // INKHOARD: plan 009
+  replaceActivity(std::make_unique<InkHoardLibraryActivity>(renderer, mappedInput));
+}
+
 void ActivityManager::goToReader(std::string path) {
   replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path)));
 }
@@ -219,6 +224,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
       initialMenuItem = HomeMenuItem::RECENTS;
     } else if (activityName == "OpdsBookBrowser") {
       initialMenuItem = HomeMenuItem::OPDS_BROWSER;
+    } else if (activityName == "InkHoardLibrary") {  // INKHOARD: plan 009
+      initialMenuItem = HomeMenuItem::INKHOARD;
     } else if (activityName == "CrossPointWebServer") {
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;
     } else if (activityName == "Settings") {
