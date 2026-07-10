@@ -44,7 +44,7 @@ bool isRedirect(int status) {
 // that ends early as ESP_ERR_HTTP_INCOMPLETE_DATA, whereas the read loop streams
 // large/slow files and surfaces a short read directly.
 HttpDownloader::DownloadError runGet(const std::string& url, const std::string& username, const std::string& password,
-                                     Sink& sink) {
+                                     Sink& sink, const HttpDownloader::RequestOptions* opts = nullptr) {
   esp_http_client_config_t config = {};
   config.url = url.c_str();
   config.buffer_size = HTTP_RX_BUF;
@@ -72,6 +72,10 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     const String header = "Basic " + base64::encode(credentials.c_str());
     esp_http_client_set_header(client, "Authorization", header.c_str());
   }
+  // INKHOARD: plan 008 — optional custom request headers (Bearer, If-None-Match)
+  if (opts && opts->setRequestHeaders) {
+    opts->setRequestHeaders(client);
+  }
 
   // open()/read() does not auto-follow redirects (only perform() does), so step
   // 30x responses manually. OPDS download endpoints and the GitHub release CDN
@@ -96,10 +100,25 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     status = esp_http_client_get_status_code(client);
   }
 
-  if (status != 200) {
+  if (opts && opts->outStatusCode) {
+    *opts->outStatusCode = status;
+  }
+  // INKHOARD: plan 008 — expose response headers (ETag) before body/status gate
+  if (opts && opts->onResponseHeaders) {
+    opts->onResponseHeaders(client);
+  }
+
+  const bool accepted = (opts && opts->acceptStatus) ? opts->acceptStatus(status) : (status == 200);
+  if (!accepted) {
     LOG_ERR("HTTP", "unexpected status: %d", status);
     esp_http_client_cleanup(client);
     return HttpDownloader::HTTP_ERROR;
+  }
+
+  // 304 / other no-body successes: skip read loop
+  if (status == 304) {
+    esp_http_client_cleanup(client);
+    return HttpDownloader::OK;
   }
 
   // fetch_headers returns 0 for a chunked response (no Content-Length); leave
@@ -174,6 +193,13 @@ bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData
 HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,
                                                              ProgressCallback progress, bool* cancelFlag,
                                                              const std::string& username, const std::string& password) {
+  return downloadToFile(url, destPath, RequestOptions{}, std::move(progress), cancelFlag, username, password);
+}
+
+HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,
+                                                             const RequestOptions& opts, ProgressCallback progress,
+                                                             bool* cancelFlag, const std::string& username,
+                                                             const std::string& password) {
   LOG_DBG("HTTP", "Downloading: %s -> %s", url.c_str(), destPath.c_str());
 
   if (Storage.exists(destPath.c_str())) {
@@ -190,7 +216,7 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   sink.cancelFlag = cancelFlag;
   sink.write = [&file](const uint8_t* data, size_t len) { return file.write(data, len) == len; };
 
-  const DownloadError result = runGet(url, username, password, sink);
+  const DownloadError result = runGet(url, username, password, sink, &opts);
   // Close before any remove() on the same path; DESTRUCTOR_CLOSES_FILE would
   // otherwise close only after the remove.
   file.close();
@@ -198,6 +224,12 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   if (result != OK) {
     Storage.remove(destPath.c_str());
     return result;
+  }
+  // 304 has empty body — treat as success without byte check
+  if (opts.outStatusCode && *opts.outStatusCode == 304) {
+    LOG_DBG("HTTP", "Not modified (304)");
+    Storage.remove(destPath.c_str());  // nothing written of value
+    return OK;
   }
   if (sink.downloaded == 0) {
     LOG_ERR("HTTP", "no data received");

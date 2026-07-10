@@ -1,0 +1,16 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "title": "Processed detail item",
+  "url": "https://example.com/articles/1",
+  "source": "web",
+  "type": "article",
+  "status": "processed",
+  "created_at": "2026-06-02T12:00:00.000Z",
+  "updated_at": "2026-06-02T13:00:00.000Z",
+  "content_version": "2026-06-02T13:00:00.000Z",
+  "tags": [
+    "reading",
+    "tech"
+  ],
+  "epub_available": true
+}

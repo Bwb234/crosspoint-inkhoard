@@ -1,0 +1,4 @@
+{
+  "error": "Forbidden: missing scope library:read",
+  "code": "forbidden"
+}

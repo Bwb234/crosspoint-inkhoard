@@ -18,7 +18,8 @@ struct JsonCallbacks {
 
 class StreamingJsonParser {
  public:
-  static constexpr size_t TOKEN_BUF_SIZE = 512;
+  // INKHOARD: plan 008 — device-api url ≤ 1024 UTF-8 bytes; was 512.
+  static constexpr size_t TOKEN_BUF_SIZE = 1025;
   static constexpr size_t MAX_NESTING = 32;
 
   explicit StreamingJsonParser(const JsonCallbacks& callbacks);

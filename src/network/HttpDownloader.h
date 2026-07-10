@@ -1,5 +1,6 @@
 #pragma once
 #include <HalStorage.h>
+#include <esp_http_client.h>
 
 #include <functional>
 #include <string>
@@ -24,6 +25,21 @@ class HttpDownloader {
   };
 
   /**
+   * Optional request/response hooks (generic; upstreamable).
+   * INKHOARD: plan 008 — Bearer, If-None-Match, ETag, non-200 status.
+   */
+  struct RequestOptions {
+    /** Set custom request headers after client init (e.g. Authorization). */
+    std::function<void(esp_http_client_handle_t)> setRequestHeaders;
+    /** Called after headers are fetched (read ETag, etc.). */
+    std::function<void(esp_http_client_handle_t)> onResponseHeaders;
+    /** If non-null, receives the final HTTP status code. */
+    int* outStatusCode = nullptr;
+    /** Accept status codes other than 200 (default: 200 only). Return true to continue body read. */
+    std::function<bool(int status)> acceptStatus;
+  };
+
+  /**
    * Fetch text content from a URL with optional credentials.
    */
   static bool fetchUrl(const std::string& url, std::string& outContent, const std::string& username = "",
@@ -42,6 +58,11 @@ class HttpDownloader {
    * Download a file to the SD card with optional credentials.
    */
   static DownloadError downloadToFile(const std::string& url, const std::string& destPath,
+                                      ProgressCallback progress = nullptr, bool* cancelFlag = nullptr,
+                                      const std::string& username = "", const std::string& password = "");
+
+  /** Same as downloadToFile with RequestOptions (Bearer / 304 / ETag). INKHOARD: plan 008 */
+  static DownloadError downloadToFile(const std::string& url, const std::string& destPath, const RequestOptions& opts,
                                       ProgressCallback progress = nullptr, bool* cancelFlag = nullptr,
                                       const std::string& username = "", const std::string& password = "");
 };

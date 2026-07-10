@@ -1,0 +1,312 @@
+{
+  "items": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Sample article 1",
+      "url": "https://example.com/articles/1",
+      "source": "web",
+      "type": "article",
+      "status": "processed",
+      "created_at": "2026-06-02T12:00:00.000Z",
+      "updated_at": "2026-06-02T13:00:00.000Z",
+      "content_version": "2026-06-02T13:00:00.000Z",
+      "tags": [
+        "news"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "title": "Sample article 2",
+      "url": "https://example.com/articles/2",
+      "source": "extension",
+      "type": "link",
+      "status": "processed",
+      "created_at": "2026-06-03T12:00:00.000Z",
+      "updated_at": "2026-06-03T13:00:00.000Z",
+      "content_version": "2026-06-03T13:00:00.000Z",
+      "tags": [
+        "reading",
+        "tech"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "title": "Sample article 3",
+      "url": "https://example.com/articles/3",
+      "source": "x_dom",
+      "type": "x_post",
+      "status": "processed",
+      "created_at": "2026-06-04T12:00:00.000Z",
+      "updated_at": "2026-06-04T13:00:00.000Z",
+      "content_version": "2026-06-04T13:00:00.000Z",
+      "tags": [
+        "longform",
+        "essays",
+        "history"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "title": "Sample article 4",
+      "url": "https://example.com/articles/4",
+      "source": "web",
+      "type": "x_thread",
+      "status": "processed",
+      "created_at": "2026-06-05T12:00:00.000Z",
+      "updated_at": "2026-06-05T13:00:00.000Z",
+      "content_version": "2026-06-05T13:00:00.000Z",
+      "tags": [],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "title": null,
+      "url": "https://example.com/articles/5",
+      "source": "extension",
+      "type": "x_article",
+      "status": "processed",
+      "created_at": "2026-06-06T12:00:00.000Z",
+      "updated_at": "2026-06-06T13:00:00.000Z",
+      "content_version": "2026-06-06T13:00:00.000Z",
+      "tags": [
+        "boox"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "title": "Sample article 6",
+      "url": "https://example.com/articles/6",
+      "source": "web",
+      "type": "pdf",
+      "status": "processed",
+      "created_at": "2026-06-07T12:00:00.000Z",
+      "updated_at": "2026-06-07T13:00:00.000Z",
+      "content_version": "2026-06-07T13:00:00.000Z",
+      "tags": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "title": "短标题示例 📚",
+      "url": "https://example.com/articles/7",
+      "source": "web",
+      "type": "video",
+      "status": "processed",
+      "created_at": "2026-06-08T12:00:00.000Z",
+      "updated_at": "2026-06-08T13:00:00.000Z",
+      "content_version": "2026-06-08T13:00:00.000Z",
+      "tags": [
+        "x"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "title": "Sample article 8",
+      "url": "https://example.com/articles/8",
+      "source": "web",
+      "type": "epub",
+      "status": "processed",
+      "created_at": "2026-06-09T12:00:00.000Z",
+      "updated_at": "2026-06-09T13:00:00.000Z",
+      "content_version": "2026-06-09T13:00:00.000Z",
+      "tags": [
+        "reading"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "title": "Sample article 9",
+      "url": "https://example.com/articles/9",
+      "source": "extension",
+      "type": "article",
+      "status": "processed",
+      "created_at": "2026-06-10T12:00:00.000Z",
+      "updated_at": "2026-06-10T13:00:00.000Z",
+      "content_version": "2026-06-10T13:00:00.000Z",
+      "tags": [
+        "tech",
+        "ai"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "title": "Sample article 10",
+      "url": "https://example.com/articles/10",
+      "source": "web",
+      "type": "link",
+      "status": "processed",
+      "created_at": "2026-06-11T12:00:00.000Z",
+      "updated_at": "2026-06-11T13:00:00.000Z",
+      "content_version": "2026-06-11T13:00:00.000Z",
+      "tags": [
+        "notes"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "title": "Sample article 11",
+      "url": "https://example.com/articles/11",
+      "source": "web",
+      "type": "article",
+      "status": "processed",
+      "created_at": "2026-06-12T12:00:00.000Z",
+      "updated_at": "2026-06-12T13:00:00.000Z",
+      "content_version": "2026-06-12T13:00:00.000Z",
+      "tags": [
+        "reading"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "title": "Sample article 12",
+      "url": "https://example.com/articles/12",
+      "source": "x_dom",
+      "type": "x_post",
+      "status": "processed",
+      "created_at": "2026-06-13T12:00:00.000Z",
+      "updated_at": "2026-06-13T13:00:00.000Z",
+      "content_version": "2026-06-13T13:00:00.000Z",
+      "tags": [
+        "x",
+        "thread"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000013",
+      "title": "Sample article 13",
+      "url": "https://example.com/articles/13",
+      "source": "web",
+      "type": "article",
+      "status": "processed",
+      "created_at": "2026-06-14T12:00:00.000Z",
+      "updated_at": "2026-06-14T13:00:00.000Z",
+      "content_version": "2026-06-14T13:00:00.000Z",
+      "tags": [
+        "science"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000014",
+      "title": "Sample article 14",
+      "url": "https://example.com/articles/14",
+      "source": "extension",
+      "type": "link",
+      "status": "processed",
+      "created_at": "2026-06-15T12:00:00.000Z",
+      "updated_at": "2026-06-15T13:00:00.000Z",
+      "content_version": "2026-06-15T13:00:00.000Z",
+      "tags": [
+        "web"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000015",
+      "title": "Sample article 15",
+      "url": "https://example.com/articles/15",
+      "source": "web",
+      "type": "article",
+      "status": "processed",
+      "created_at": "2026-06-16T12:00:00.000Z",
+      "updated_at": "2026-06-16T13:00:00.000Z",
+      "content_version": "2026-06-16T13:00:00.000Z",
+      "tags": [
+        "queue"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000016",
+      "title": "Sample article 16",
+      "url": "https://example.com/articles/16",
+      "source": "x_dom",
+      "type": "x_article",
+      "status": "processed",
+      "created_at": "2026-06-17T12:00:00.000Z",
+      "updated_at": "2026-06-17T13:00:00.000Z",
+      "content_version": "2026-06-17T13:00:00.000Z",
+      "tags": [
+        "x"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000017",
+      "title": "Sample article 17",
+      "url": "https://example.com/articles/17",
+      "source": "web",
+      "type": "article",
+      "status": "processed",
+      "created_at": "2026-06-18T12:00:00.000Z",
+      "updated_at": "2026-06-18T13:00:00.000Z",
+      "content_version": "2026-06-18T13:00:00.000Z",
+      "tags": [
+        "design"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000018",
+      "title": "Sample article 18",
+      "url": "https://example.com/articles/18",
+      "source": "web",
+      "type": "link",
+      "status": "processed",
+      "created_at": "2026-06-19T12:00:00.000Z",
+      "updated_at": "2026-06-19T13:00:00.000Z",
+      "content_version": "2026-06-19T13:00:00.000Z",
+      "tags": [
+        "ops"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000019",
+      "title": "Sample article 19",
+      "url": "https://example.com/articles/19",
+      "source": "extension",
+      "type": "article",
+      "status": "processed",
+      "created_at": "2026-06-20T12:00:00.000Z",
+      "updated_at": "2026-06-20T13:00:00.000Z",
+      "content_version": "2026-06-20T13:00:00.000Z",
+      "tags": [
+        "meta"
+      ],
+      "epub_available": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000020",
+      "title": "Sample article 20",
+      "url": "https://example.com/articles/20",
+      "source": "web",
+      "type": "pdf",
+      "status": "processed",
+      "created_at": "2026-06-21T12:00:00.000Z",
+      "updated_at": "2026-06-21T13:00:00.000Z",
+      "content_version": "2026-06-21T13:00:00.000Z",
+      "tags": [
+        "pdf"
+      ],
+      "epub_available": true
+    }
+  ],
+  "next_cursor": "MjAyNi0wNi0yMVQxMjowMDowMC4wMDBafDAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAyMA",
+  "has_more": true
+}

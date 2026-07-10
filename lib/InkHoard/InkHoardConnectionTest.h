@@ -3,9 +3,8 @@
 #include <string>
 
 /**
- * One-shot connection test: GET /api/device/v1/library?limit=1 with Bearer.
- * Uses esp_http_client directly (HttpDownloader has no Bearer support).
- * INKHOARD: plan 007 — plan 008 will replace transport with InkHoardClient.
+ * One-shot connection test via InkHoardClient::testConnection().
+ * INKHOARD: plan 007 UI surface; plan 008 transport.
  */
 class InkHoardConnectionTest {
  public:

@@ -55,10 +55,13 @@ upstream instead of accumulating in the fork.
 | `src/network/CrossPointWebServer.h` | `/api/inkhoard` handlers | 007 |
 | `src/network/CrossPointWebServer.cpp` | Credential GET/POST/delete (`hasToken` only) | 007 |
 | `src/network/html/SettingsPage.html` (+ generated) | Web UI for InkHoard credentials | 007 |
-| `test/CMakeLists.txt` | Host test for credential logic | 007 |
+| `test/CMakeLists.txt` | Host tests for credential logic / JSON / client | 007, 008 |
+| `src/network/HttpDownloader.h` | Generic `RequestOptions` (headers, status, accept) | 008 |
+| `src/network/HttpDownloader.cpp` | Wire `RequestOptions`; 304 no-body path | 008 |
+| `lib/JsonParser/StreamingJsonParser.h` | `TOKEN_BUF_SIZE` 512 → 1025 (url ≤ 1024) | 008 |
 
 Fork-local (not shared): `lib/InkHoard/*`, `src/activities/settings/InkHoard*.{h,cpp}`,
-`test/inkhoard_credential_logic/*`.
+`test/inkhoard_*`, `test/fixtures/device-api/*`.
 
 **Plan 007 size delta** (CI run
 [29060825109](https://github.com/Bwb234/crosspoint-inkhoard/actions/runs/29060825109)):
