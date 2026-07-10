@@ -301,6 +301,7 @@
   </div>
 
   <div id="wifi-container"></div>
+  <div id="inkhoard-container"></div>
   <div id="opds-container"></div>
 
   <div class="card">
@@ -711,6 +712,82 @@
     }
   }
 
+  // --- InkHoard credentials (token never pre-filled; hasToken / tokenHint only) ---
+  let inkhoardCreds = {serverUrl:'', displayName:'', hasToken:false, tokenHint:''};
+
+  function renderInkHoardSection() {
+    const container = document.getElementById('inkhoard-container');
+    const hint = inkhoardCreds.hasToken
+      ? (inkhoardCreds.tokenHint || '(set)')
+      : '';
+    container.innerHTML =
+      '<div class="card"><h2>InkHoard</h2>' +
+      '<div class="setting-row">' +
+        '<span class="setting-name">Server URL</span>' +
+        '<span class="setting-control"><input type="text" id="ink-url" value="' + escapeHtml(inkhoardCreds.serverUrl || '') + '" placeholder="https://"></span>' +
+      '</div>' +
+      '<div class="setting-row">' +
+        '<span class="setting-name">Display Name</span>' +
+        '<span class="setting-control"><input type="text" id="ink-name" value="' + escapeHtml(inkhoardCreds.displayName || '') + '"></span>' +
+      '</div>' +
+      '<div class="setting-row">' +
+        '<span class="setting-name">Device Token</span>' +
+        '<span class="setting-control"><input type="password" id="ink-token" placeholder="' + (inkhoardCreds.hasToken ? escapeHtml(hint || '(unchanged)') : '') + '"></span>' +
+      '</div>' +
+      '<div class="opds-actions">' +
+        '<button class="btn-small btn-save-server" onclick="saveInkHoard()">Save</button>' +
+        '<button class="btn-small btn-delete" onclick="clearInkHoard()">Clear</button>' +
+      '</div></div>';
+  }
+
+  async function loadInkHoard() {
+    try {
+      const resp = await fetch('/api/inkhoard');
+      if (!resp.ok) throw new Error('Failed to load');
+      inkhoardCreds = await resp.json();
+      renderInkHoardSection();
+    } catch (e) {
+      console.error('InkHoard load error:', e);
+    }
+  }
+
+  async function saveInkHoard() {
+    const data = {
+      serverUrl: document.getElementById('ink-url').value,
+      displayName: document.getElementById('ink-name').value,
+    };
+    const token = document.getElementById('ink-token').value;
+    if (token) data.token = token;
+    try {
+      const resp = await fetch('/api/inkhoard', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      showMessage('InkHoard credentials saved!', false);
+      await loadInkHoard();
+    } catch (e) {
+      showMessage('Error: ' + e.message, true);
+    }
+  }
+
+  async function clearInkHoard() {
+    if (!confirm('Clear InkHoard credentials?')) return;
+    try {
+      const resp = await fetch('/api/inkhoard/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}'
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      showMessage('InkHoard credentials cleared', false);
+      await loadInkHoard();
+    } catch (e) {
+      showMessage('Error: ' + e.message, true);
+    }
+  }
+
   // --- OPDS Server Management ---
   // Dynamically renders an editable list of OPDS servers, communicating with the
   // /api/opds REST endpoints. Password fields are never pre-filled for security;
@@ -826,6 +903,7 @@
   }
 
   loadWifiNetworks();
+  loadInkHoard();
   loadOpdsServers();
 </script>
 </body>

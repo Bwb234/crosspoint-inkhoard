@@ -135,6 +135,11 @@ class CrossPointWebServer {
   void handlePostOpdsServer();
   void handleDeleteOpdsServer();
 
+  // INKHOARD: plan 007 — credentials (token never returned; hasToken only)
+  void handleGetInkHoard() const;
+  void handlePostInkHoard();
+  void handleDeleteInkHoard();
+
   // Wi-Fi credential handlers
   void handleGetWifiNetworks() const;
   void handlePostWifiNetwork();

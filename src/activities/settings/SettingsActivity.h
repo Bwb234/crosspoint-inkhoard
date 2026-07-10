@@ -17,6 +17,7 @@ enum class SettingAction {
   RemapFrontButtons,
   CustomiseStatusBar,
   KOReaderSync,
+  InkHoard,  // INKHOARD: plan 007
   OPDSBrowser,
   Network,
   ClearCache,

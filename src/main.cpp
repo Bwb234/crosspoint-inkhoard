@@ -20,6 +20,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "InkHoardCredentialStore.h"  // INKHOARD: plan 007
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
@@ -349,6 +350,7 @@ void setup() {
   RECENT_BOOKS.loadFromFile();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   KOREADER_STORE.loadFromFile();
+  INKHOARD_STORE.loadFromFile();  // INKHOARD: plan 007
   OPDS_STORE.loadFromFile();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);

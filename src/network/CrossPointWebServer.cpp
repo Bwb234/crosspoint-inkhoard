@@ -15,6 +15,7 @@
 
 #include "CrossPointSettings.h"
 #include "FontInstaller.h"
+#include "InkHoardCredentialStore.h"  // INKHOARD: plan 007
 #include "OpdsServerStore.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
@@ -172,6 +173,11 @@ void CrossPointWebServer::begin() {
   server->on("/api/opds", HTTP_GET, [this] { handleGetOpdsServers(); });
   server->on("/api/opds", HTTP_POST, [this] { handlePostOpdsServer(); });
   server->on("/api/opds/delete", HTTP_POST, [this] { handleDeleteOpdsServer(); });
+
+  // INKHOARD: plan 007
+  server->on("/api/inkhoard", HTTP_GET, [this] { handleGetInkHoard(); });
+  server->on("/api/inkhoard", HTTP_POST, [this] { handlePostInkHoard(); });
+  server->on("/api/inkhoard/delete", HTTP_POST, [this] { handleDeleteInkHoard(); });
 
   // Wi-Fi credential endpoints
   server->on("/api/wifi", HTTP_GET, [this] { handleGetWifiNetworks(); });
@@ -1290,6 +1296,76 @@ void CrossPointWebServer::handlePostSettings() {
 
   LOG_DBG("WEB", "Applied %d setting(s)", applied);
   server->send(200, "text/plain", String("Applied ") + String(applied) + " setting(s)");
+}
+
+// ---- InkHoard credentials API (INKHOARD: plan 007) ----
+
+void CrossPointWebServer::handleGetInkHoard() const {
+  JsonDocument doc;
+  doc["serverUrl"] = INKHOARD_STORE.getServerUrl();
+  doc["displayName"] = INKHOARD_STORE.getDisplayName();
+  // Never expose the token — only whether one is set (mirrors OPDS hasPassword)
+  doc["hasToken"] = !INKHOARD_STORE.getToken().empty();
+  doc["tokenHint"] = INKHOARD_STORE.getRedactedToken();
+
+  char output[384];
+  const size_t written = serializeJson(doc, output, sizeof(output));
+  if (written == 0 || written >= sizeof(output)) {
+    server->send(500, "text/plain", "Serialization failed");
+    return;
+  }
+  server->send(200, "application/json", output);
+  LOG_DBG("WEB", "Served InkHoard credentials API (hasToken=%d)", doc["hasToken"].as<bool>());
+}
+
+void CrossPointWebServer::handlePostInkHoard() {
+  if (!server->hasArg("plain")) {
+    server->send(400, "text/plain", "Missing JSON body");
+    return;
+  }
+
+  const String body = server->arg("plain");
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    server->send(400, "text/plain", String("Invalid JSON: ") + err.c_str());
+    return;
+  }
+
+  if (doc["serverUrl"].is<const char*>() || doc["serverUrl"].is<std::string>()) {
+    const std::string url = doc["serverUrl"] | std::string("");
+    if (!INKHOARD_STORE.setServerUrl(url)) {
+      server->send(400, "text/plain", "Invalid server URL (https required)");
+      return;
+    }
+  }
+
+  if (doc["displayName"].is<const char*>() || doc["displayName"].is<std::string>()) {
+    INKHOARD_STORE.setDisplayName(doc["displayName"] | std::string(""));
+  }
+
+  // Token is optional: omit to preserve; empty string clears; non-empty sets
+  const bool hasTokenField = doc["token"].is<const char*>() || doc["token"].is<std::string>();
+  if (hasTokenField) {
+    const std::string token = doc["token"] | std::string("");
+    if (token.empty()) {
+      // Explicit clear of token only — keep URL/name
+      INKHOARD_STORE.setToken("");
+    } else if (!INKHOARD_STORE.setToken(token)) {
+      server->send(400, "text/plain", "Token too long");
+      return;
+    }
+  }
+
+  INKHOARD_STORE.saveToFile();
+  LOG_DBG("WEB", "Updated InkHoard credentials (hasToken=%d)", INKHOARD_STORE.hasCredentials());
+  server->send(200, "text/plain", "OK");
+}
+
+void CrossPointWebServer::handleDeleteInkHoard() {
+  INKHOARD_STORE.clear();
+  LOG_DBG("WEB", "Cleared InkHoard credentials");
+  server->send(200, "text/plain", "OK");
 }
 
 // ---- OPDS Server API ----

@@ -48,7 +48,17 @@ upstream instead of accumulating in the fork.
 
 | File | Why touched | Plan |
 | --- | --- | --- |
-| *(none yet — plan 005 adds no source changes)* | | |
+| `src/main.cpp` | Load `INKHOARD_STORE` on boot | 007 |
+| `src/activities/settings/SettingsActivity.h` | `SettingAction::InkHoard` | 007 |
+| `src/activities/settings/SettingsActivity.cpp` | System menu entry + activity launch | 007 |
+| `lib/I18n/translations/english.yaml` (+ generated I18n*) | InkHoard settings/connection strings | 007 |
+| `src/network/CrossPointWebServer.h` | `/api/inkhoard` handlers | 007 |
+| `src/network/CrossPointWebServer.cpp` | Credential GET/POST/delete (`hasToken` only) | 007 |
+| `src/network/html/SettingsPage.html` (+ generated) | Web UI for InkHoard credentials | 007 |
+| `test/CMakeLists.txt` | Host test for credential logic | 007 |
+
+Fork-local (not shared): `lib/InkHoard/*`, `src/activities/settings/InkHoard*.{h,cpp}`,
+`test/inkhoard_credential_logic/*`.
 
 ## Version Scheme
 
